@@ -1,0 +1,51 @@
+# Python and uv
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+**/.pytest_cache/
+.ruff_cache/
+**/.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Node.js
+node_modules/
+
+# Local secrets and certificates
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.cer
+*.crt
+
+# Local client data and generated outputs
+local-data/
+private-data/
+outputs/
+**/03_SAIDAS/
+**/UC001_*/
+*.log
+
+# Fiscal and client documents are private by default. Force-add only reviewed
+# synthetic fixtures when they are intentionally part of the test suite.
+*.xml
+*.pdf
+*.xls
+*.xlsx
+*.zip
+*.csv
+!skills/validar-base-documental/assets/modelos-de-entrada/*.exemplo.csv
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

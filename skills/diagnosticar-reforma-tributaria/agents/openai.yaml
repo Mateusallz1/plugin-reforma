@@ -1,0 +1,4 @@
+interface:
+  display_name: "Diagnóstico da Reforma Tributária"
+  short_description: "Analisa operação, riscos, créditos e cenários"
+  default_prompt: "Use $diagnosticar-reforma-tributaria para avaliar a empresa e indicar dados faltantes."

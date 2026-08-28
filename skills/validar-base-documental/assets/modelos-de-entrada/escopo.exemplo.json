@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "entity_ref": "EMPRESA-001",
+  "establishment_ref": "ESTAB-001",
+  "entity_taxpayer_ids": ["12345678000195"],
+  "period": "2026-03",
+  "objective": "VALIDATE_DOCUMENT_BASE",
+  "document_families": ["NFE", "NFCE", "NFSE", "CTE"],
+  "validation_policy": "DOCUMENTARY_INITIAL",
+  "analysis_cutoff": "2026-08-27T00:00:00-03:00"
+}

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Validar base documental"
+  short_description: "Valida notas e CT-e por escopo documental"
+  default_prompt: "Use $analise-empresarial-reforma-tributaria:validar-base-documental para verificar se a pasta fiscal está pronta para o planejamento."
+policy:
+  allow_implicit_invocation: true

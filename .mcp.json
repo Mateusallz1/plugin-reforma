@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "company_analysis": {
+      "command": "cmd.exe",
+      "args": [
+        "/d",
+        "/s",
+        "/c",
+        "call",
+        "./scripts/launch-company-analysis-mcp.cmd",
+        "./server.mjs"
+      ],
+      "cwd": ".",
+      "enabled": true,
+      "env_vars": [
+        "CODEX_MCP_NODE_PATH",
+        "SIMPLES_CHECK_BASE_URL",
+        "SIMPLES_CHECK_API_KEY",
+        "PATH"
+      ],
+      "startup_timeout_sec": 20,
+      "tool_timeout_sec": 3600
+    }
+  }
+}
