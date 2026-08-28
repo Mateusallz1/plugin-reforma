@@ -1,12 +1,11 @@
 {
   "name": "analise-empresarial-reforma-tributaria",
-  "version": "0.21.0+codex.20260828183312",
+  "version": "0.22.0+codex.20260828190704",
   "description": "Valida bases documentais de NF-e, NFC-e, NFS-e e CT-e por escopo e orienta o planejamento empresarial da Reforma Tribut\u00e1ria com rastreabilidade.",
   "author": {
     "name": "Desenvolvedor local"
   },
   "skills": "./skills/",
-  "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Planejamento da Reforma Tribut\u00e1ria",
     "shortDescription": "Valida entradas e guia o planejamento fiscal com rastreabilidade.",

@@ -1,7 +1,7 @@
 * text=auto
 
 # Preserve the non-reconstructible legacy bundle byte-for-byte.
-server.mjs -text
+legacy/mcp/server.mjs -text
 
 *.cmd text eol=crlf
 *.ps1 text eol=crlf

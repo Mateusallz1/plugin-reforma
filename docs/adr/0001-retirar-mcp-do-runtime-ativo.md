@@ -58,3 +58,7 @@ Os perfis analíticos do bundle Node não serão tratados como equivalentes aos 
 - o bundle legado continua recuperável e com checksum válido;
 - testes, validação estrutural e base real permanecem aprovados;
 - a documentação ativa não orienta o usuário a utilizar o MCP.
+
+## Estado de implementação
+
+Em 2026-08-28, o legado foi movido para `legacy/mcp/`, a skill antiga saiu de `skills/` e `mcpServers` foi removido do manifesto ativo. Os hashes foram preservados e a cópia instalada `0.22.0` passou na validação estrutural e no UC-001 real. A transição está pronta para revisão e commit.

@@ -2,7 +2,7 @@
 
 ## Evidência preservada
 
-- Artefato: `server.mjs`
+- Artefato: `legacy/mcp/server.mjs`
 - SHA-256: `2A7397963B293E0326FFCCF842D048EC2C09DB87078445784E04DD9C9D78EF0A`
 - Servidor MCP: `0.9.0`
 - Schema de análise empresarial: `2.9.0`
