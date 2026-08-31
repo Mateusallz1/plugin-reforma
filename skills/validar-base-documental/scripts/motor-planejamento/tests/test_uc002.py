@@ -47,6 +47,13 @@ def make_authorized_content_case(tmp_path: Path) -> tuple[Path, str, str]:
     return folder, nfe_key, cte_key
 
 
+def write_product_ncm_catalog(folder: Path, approved_ncm: str) -> None:
+    (folder / "00_CONTROLE" / "catalogo-produtos-ncm.csv").write_text(
+        f"codigo_produto;ncm_aprovado;status\n1;{approved_ncm};APROVADO\n",
+        encoding="utf-8",
+    )
+
+
 def test_uc002_extracts_deterministically_and_preserves_privacy(
     tmp_path: Path,
 ) -> None:
@@ -56,11 +63,18 @@ def test_uc002_extracts_deterministically_and_preserves_privacy(
     second = extract_content_folder(folder)
 
     assert first == second
-    assert first["status"] == "CONTENT_REVIEW_REQUIRED"
+    assert first["status"] == "CONTENT_READY_WITH_OBSERVATIONS"
     assert first["gates"] == {
         "content_extraction_ready": True,
+        "uc003_analysis_authorized": True,
+        "uc003_full_population_ready": True,
         "lcp214_classification_ready": False,
         "analyst_review_required": True,
+    }
+    assert first["uc003_eligibility"] == {
+        "eligible_records": 3,
+        "restricted_records": 0,
+        "restriction_counts_by_scope": {},
     }
     assert first["records_total"] == 3
     assert first["record_kind_counts"] == {
@@ -75,8 +89,13 @@ def test_uc002_extracts_deterministically_and_preserves_privacy(
     }
     assert first["component_count"] == 1
     assert first["document_reconciliation"]["status_counts"] == {"MATCHED": 1}
-    review_codes = {finding["code"] for finding in first["review_findings"]}
-    assert review_codes == {"CCLASSTRIB_MISSING", "NBS_MISSING"}
+    observation_codes = {finding["code"] for finding in first["observations"]}
+    assert observation_codes == {
+        "CCLASSTRIB_MISSING",
+        "NBS_MISSING",
+        "PRODUCT_NCM_CATALOG_ABSENT",
+    }
+    assert first["restrictions"] == []
 
     summary_path, records_path, report_path = write_content_outputs(
         first, folder / "04_CONTEUDO"
@@ -122,7 +141,7 @@ def test_uc002_requires_uc001_authorization(tmp_path: Path) -> None:
         extract_content_folder(folder)
 
 
-def test_uc002_blocks_product_total_mismatch(tmp_path: Path) -> None:
+def test_uc002_observes_product_total_mismatch_without_blocking(tmp_path: Path) -> None:
     folder = make_folder(tmp_path, "content-mismatch", document_families=["NFE"])
     key = access_key(COMPANY, "55", 73)
     xml = nfe_xml(key, "55", COMPANY, OTHER, "2026-03-05", "100.00")
@@ -134,12 +153,82 @@ def test_uc002_blocks_product_total_mismatch(tmp_path: Path) -> None:
 
     result = extract_content_folder(folder)
 
-    assert result["status"] == "CONTENT_BLOCKED"
-    assert result["gates"]["content_extraction_ready"] is False
+    assert result["status"] == "CONTENT_READY_WITH_OBSERVATIONS"
+    assert result["gates"]["content_extraction_ready"] is True
+    assert result["gates"]["uc003_analysis_authorized"] is True
     assert "DOCUMENT_PRODUCT_TOTAL_MISMATCH" in {
-        finding["code"] for finding in result["blockers"]
+        finding["code"] for finding in result["observations"]
     }
-    assert main(["extract-content", str(folder)]) == 2
+    assert main(["extract-content", str(folder)]) == 0
+
+
+def test_uc002_validates_product_ncm_from_approved_catalog(tmp_path: Path) -> None:
+    folder, _, _ = make_authorized_content_case(tmp_path)
+    write_product_ncm_catalog(folder, "00000000")
+
+    result = extract_content_folder(folder)
+    product = next(
+        record
+        for record in result["_private_records"]
+        if record["record_kind"] == "PRODUCT"
+    )
+
+    assert result["product_ncm_catalog"]["status"] == "LOADED"
+    assert result["product_ncm_catalog"]["approved_entries"] == 1
+    assert product["product_ncm_validation"] == {
+        "status": "VALIDATED",
+        "source": "ANALYST_APPROVED_CATALOG",
+    }
+    assert product["eligible_for_uc003"] is True
+    assert result["gates"]["uc003_full_population_ready"] is True
+
+
+def test_uc002_restricts_only_product_with_confirmed_ncm_mismatch(
+    tmp_path: Path,
+) -> None:
+    folder, _, _ = make_authorized_content_case(tmp_path)
+    write_product_ncm_catalog(folder, "12345678")
+
+    result = extract_content_folder(folder)
+    product = next(
+        record
+        for record in result["_private_records"]
+        if record["record_kind"] == "PRODUCT"
+    )
+
+    assert result["status"] == "CONTENT_READY_WITH_RESTRICTIONS"
+    assert result["gates"]["content_extraction_ready"] is True
+    assert result["gates"]["uc003_analysis_authorized"] is True
+    assert result["gates"]["uc003_full_population_ready"] is False
+    assert result["uc003_eligibility"]["eligible_records"] == 2
+    assert result["uc003_eligibility"]["restricted_records"] == 1
+    assert product["eligible_for_uc003"] is False
+    assert product["product_ncm_validation"]["status"] == "MISMATCH"
+    assert product["restriction_codes"] == ["PRODUCT_NCM_MISMATCH"]
+    assert {finding["code"] for finding in result["restrictions"]} == {
+        "PRODUCT_NCM_MISMATCH"
+    }
+
+
+def test_uc002_restricts_invalid_ncm_without_blocking_extraction(
+    tmp_path: Path,
+) -> None:
+    folder = make_folder(tmp_path, "invalid-ncm", document_families=["NFE"])
+    key = access_key(COMPANY, "55", 74)
+    xml = nfe_xml(key, "55", COMPANY, OTHER, "2026-03-05", "100.00")
+    xml = xml.replace("<NCM>00000000</NCM>", "<NCM>INVALIDO</NCM>")
+    (folder / "01_XML" / "invalid-ncm.xml").write_text(xml, encoding="utf-8")
+    validation = validate_folder(folder)
+    assert validation["gates"]["planning_authorized"] is True
+    write_outputs(validation, folder / "03_SAIDAS")
+
+    result = extract_content_folder(folder)
+
+    assert result["gates"]["content_extraction_ready"] is True
+    assert result["gates"]["uc003_analysis_authorized"] is False
+    assert result["uc003_eligibility"]["restricted_records"] == 1
+    assert {finding["code"] for finding in result["restrictions"]} == {"NCM_INVALID"}
+    assert main(["extract-content", str(folder)]) == 0
 
 
 @pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="Windows launcher")

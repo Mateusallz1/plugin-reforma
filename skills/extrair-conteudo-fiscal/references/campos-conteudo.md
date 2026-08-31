@@ -8,7 +8,7 @@
 - legado: origem e CST/CSOSN do ICMS, CST de PIS, Cofins e IPI;
 - IBS/CBS: CST, `cClassTrib`, base e alíquotas quando informadas.
 
-NCM e CFOP ausentes ou malformados exigem revisão. CEST e `cBenef` não são universais e sua ausência não é, isoladamente, erro.
+CFOP ausente ou malformado gera observação. NCM ausente ou malformado restringe o produto; divergência Produto × NCM somente é confirmada contra catálogo `APROVADO`. CEST e `cBenef` não são universais e sua ausência não é, isoladamente, erro.
 
 ## NFS-e
 

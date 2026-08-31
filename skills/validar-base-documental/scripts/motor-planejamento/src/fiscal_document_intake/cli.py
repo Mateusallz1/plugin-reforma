@@ -49,6 +49,9 @@ def main(argv: list[str] | None = None) -> int:
                 "status": result["status"],
                 "content_analysis_id": result["content_analysis_id"],
                 "content_extraction_ready": ready,
+                "uc003_analysis_authorized": result["gates"][
+                    "uc003_analysis_authorized"
+                ],
                 "lcp214_classification_ready": result["gates"][
                     "lcp214_classification_ready"
                 ],

@@ -57,7 +57,11 @@ Os artefatos são gravados em `04_CONTEUDO/`:
 - `relatorio-qualidade-conteudo.md`: relatório operacional para o analista;
 - `normalized-items.local.jsonl`: conteúdo detalhado local e restrito, que não deve ser copiado para conversa ou Git.
 
-`content_extraction_ready=true` significa que a população foi extraída e reconciliada. Não significa que a classificação da LC 214 esteja concluída. O gate independente `lcp214_classification_ready` só poderá ser liberado quando as regras, tabelas oficiais e revisão do analista forem implementadas.
+`content_extraction_ready=true` significa que a população foi extraída; eventuais divergências de reconciliação permanecem registradas como observações. Não significa que a classificação da LC 214 esteja concluída. `lcp214_classification_ready` é apenas um indicador de completude dos campos, não autorização ou conclusão jurídica.
+
+Observações de CNAE, NBS, `cClassTrib`, CFOP, descrição, valores ou reconciliação não impedem o início do UC-003. O gate `uc003_analysis_authorized` indica se existe população elegível; `uc003_full_population_ready` indica se nenhum item foi restringido.
+
+Para validar Produto × NCM contra decisão do analista, coloque opcionalmente `00_CONTROLE/catalogo-produtos-ncm.csv` na pasta analisada, com as colunas `codigo_produto`, `ncm_aprovado` e `status`. Somente linhas `APROVADO` podem confirmar divergência. Sem catálogo ou sem correspondência, o motor registra observação e permite avanço provisório; NCM ausente/malformado ou divergente restringe somente o produto afetado.
 
 ## Verificação local
 

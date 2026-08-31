@@ -2,7 +2,7 @@
 
 ## Baseline atual
 
-- Plugin: `0.24.0` com cachebuster local aplicado na instalação.
+- Plugin em desenvolvimento: `0.25.0`; a instalação ativa permanece em `0.24.0` até o próximo commit e cachebuster.
 - Branch: `main`; confirme `git status` e `git log -1` ao retomar, sem depender de hash gravado neste documento.
 - Runtime ativo: Python/`uv`, sem servidor MCP no manifesto.
 - Skills ativas: `uv`, `validar-base-documental` e `extrair-conteudo-fiscal`.
@@ -11,7 +11,7 @@
 - Homologação real: 130 documentos incluídos, três escopos `READY`, sem bloqueadores.
 - UC-002: extração normalizada de produtos, serviços e transportes somente nos grupos operacionais autorizados.
 - Homologação real do UC-002: 130 documentos selecionados, 204 registros, 25 componentes, 44 NF-e reconciliadas e nenhum bloqueador de extração.
-- Testes: 18 aprovados, Ruff e lock do `uv` aprovados.
+- Testes: 21 aprovados após a política de elegibilidade do UC-003; Ruff e lock do `uv` devem ser revalidados antes do commit.
 
 ## Concluído
 
@@ -31,6 +31,9 @@
 - [x] UC-002 com skill própria e gate dependente do UC-001.
 - [x] Extração de 118 produtos, 80 serviços e 6 transportes na base real, sem levar dados fiscais ao Git.
 - [x] Separação entre `content_extraction_ready` e `lcp214_classification_ready`.
+- [x] Observações do UC-002 sem bloqueio do início do UC-003.
+- [x] Restrição por item para NCM ausente/malformado ou divergência confirmada Produto × NCM.
+- [x] Catálogo opcional homologado pelo analista, sem inferência bloqueante por descrição.
 
 ## Ajustes desta fase
 
@@ -62,6 +65,10 @@ Uma simulação local por clone isolado passou nos 14 testes e nos validadores. 
 O UC-002 consome o `validation-result.json`, seleciona somente documentos autorizados e com análise operacional necessária, normaliza os itens e reconcilia o total de produtos das NF-e. Os achados de qualidade permanecem explícitos e não são corrigidos silenciosamente.
 
 Na base real homologada, 80 NFS-e trouxeram código de nove dígitos no campo `CodigoCnae`; o motor preservou o valor e marcou `CNAE_INVALID` para revisão, pois não corresponde ao formato nacional de sete dígitos. A ausência de NBS e cClassTrib também exige revisão, mas não bloqueia a extração.
+
+Na política `1.1.0`, esses achados passam a ser observações e não impedem o UC-003. O avanço é controlado por registro: NCM ausente/malformado restringe o produto e uma divergência somente é confirmada quando `cProd` e NCM diferem de uma entrada `APROVADO` em `00_CONTROLE/catalogo-produtos-ncm.csv`. Sem catálogo, o resultado é inconclusivo e provisoriamente elegível.
+
+A nova homologação real manteve 204 registros: 204 elegíveis, nenhuma restrição e `uc003_analysis_authorized=true`. Foram preservadas 453 observações agregadas — 175 sem `cClassTrib`, 118 sem catálogo Produto × NCM, 80 CNAE fora do formato nacional e 80 sem NBS — sem expor descrições ou identificadores fiscais.
 
 ### 5. Homologar o modelo de relatório do analista
 

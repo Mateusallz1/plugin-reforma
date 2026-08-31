@@ -17,7 +17,9 @@
 - Autorização por escopo: uma família restrita não invalida famílias independentes prontas.
 - Grupos sem ocorrência ficam `SEM_MOVIMENTACAO` e não geram análise operacional.
 - O UC-002 extrai `PRODUCT`, `SERVICE` e `TRANSPORT` somente quando `authorized_for_planning=true` e `operational_analysis_required=true` no UC-001.
-- O gate `content_extraction_ready` não libera automaticamente `lcp214_classification_ready`.
+- Observações do UC-002 não impedem o UC-003; use `uc003_analysis_authorized` como gate operacional e preserve `lcp214_classification_ready` apenas como indicador de completude.
+- Produto com NCM ausente/malformado ou divergente de catálogo `APROVADO` fica restrito por item; não bloqueie serviços, transportes ou outros produtos elegíveis.
+- Sem catálogo Produto × NCM ou sem correspondência por `cProd`, registre inconclusão e permita avanço provisório. Não confirme incompatibilidade por similaridade textual.
 
 ## Privacidade e evidência
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import re
@@ -23,7 +24,8 @@ from .core import (
 )
 
 CONTENT_SCHEMA = "br.com.planejamento-reforma-tributaria/fiscal-content"
-CONTENT_SCHEMA_VERSION = "1.0.0"
+CONTENT_SCHEMA_VERSION = "1.1.0"
+PRODUCT_NCM_CATALOG = Path("00_CONTROLE") / "catalogo-produtos-ncm.csv"
 
 FIELD_COVERAGE = {
     "PRODUCT": (
@@ -130,23 +132,114 @@ def _validate_code(
     missing_code: str,
     invalid_code: str,
     pattern: str,
-    missing_severity: str = "REVIEW",
+    missing_severity: str = "OBSERVATION",
+    invalid_severity: str = "OBSERVATION",
 ) -> None:
     if not value:
         findings.append(_finding(missing_code, field, missing_severity))
     elif re.fullmatch(pattern, value) is None:
-        findings.append(_finding(invalid_code, field, "REVIEW"))
+        findings.append(_finding(invalid_code, field, invalid_severity))
 
 
 def _content_status(findings: list[dict[str, str]]) -> str:
     severities = {finding["severity"] for finding in findings}
+    if "RESTRICTION" in severities:
+        return "RESTRICTED"
     if "BLOCKER" in severities:
         return "BLOCKED"
-    if "REVIEW" in severities:
-        return "REVIEW_REQUIRED"
-    if "WARNING" in severities:
-        return "READY_WITH_WARNINGS"
+    if severities & {"OBSERVATION", "REVIEW", "WARNING"}:
+        return "READY_WITH_OBSERVATIONS"
     return "READY"
+
+
+def _catalog_digest(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _load_product_ncm_catalog(folder: Path) -> tuple[dict[str, str], dict[str, Any]]:
+    path = folder / PRODUCT_NCM_CATALOG
+    digest = _catalog_digest(path)
+    if digest is None:
+        return {}, {"status": "ABSENT", "approved_entries": 0, "source_hash": None}
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as stream:
+            sample = stream.read(4096)
+            stream.seek(0)
+            delimiter = ";" if sample.count(";") >= sample.count(",") else ","
+            reader = csv.DictReader(stream, delimiter=delimiter)
+            headers = set(reader.fieldnames or [])
+            required = {"codigo_produto", "ncm_aprovado", "status"}
+            if not required.issubset(headers):
+                raise ValidationError(
+                    "catalogo-produtos-ncm.csv exige codigo_produto, ncm_aprovado e status"
+                )
+            catalog: dict[str, str] = {}
+            for line_number, row in enumerate(reader, start=2):
+                product_code = (row.get("codigo_produto") or "").strip()
+                approved_ncm = re.sub(r"\D", "", row.get("ncm_aprovado") or "")
+                status = (row.get("status") or "").strip().upper()
+                if status != "APROVADO":
+                    continue
+                if not product_code or re.fullmatch(r"\d{8}", approved_ncm) is None:
+                    raise ValidationError(
+                        f"catalogo-produtos-ncm.csv possui linha APROVADO inválida: {line_number}"
+                    )
+                previous = catalog.get(product_code)
+                if previous is not None and previous != approved_ncm:
+                    raise ValidationError(
+                        "catalogo-produtos-ncm.csv possui mais de um NCM aprovado para o mesmo produto"
+                    )
+                catalog[product_code] = approved_ncm
+    except (OSError, UnicodeError, csv.Error) as error:
+        raise ValidationError(
+            "catalogo-produtos-ncm.csv deve ser CSV UTF-8 válido"
+        ) from error
+    return catalog, {
+        "status": "LOADED",
+        "approved_entries": len(catalog),
+        "source_hash": digest,
+    }
+
+
+def _apply_product_ncm_policy(
+    record: dict[str, Any], catalog: dict[str, str], catalog_loaded: bool
+) -> None:
+    findings = record["findings"]
+    ncm = record.get("ncm")
+    product_code = record.get("product_code")
+    validation = {"status": "INCONCLUSIVE", "source": "DOCUMENT_ONLY"}
+    if not ncm or re.fullmatch(r"\d{8}", ncm) is None:
+        validation["status"] = "UNVERIFIABLE"
+    elif not catalog_loaded:
+        findings.append(
+            _finding("PRODUCT_NCM_CATALOG_ABSENT", "product_ncm", "OBSERVATION")
+        )
+    elif not product_code or product_code not in catalog:
+        findings.append(
+            _finding(
+                "PRODUCT_NCM_CATALOG_ENTRY_MISSING",
+                "product_ncm",
+                "OBSERVATION",
+            )
+        )
+    elif catalog[product_code] == ncm:
+        validation = {"status": "VALIDATED", "source": "ANALYST_APPROVED_CATALOG"}
+    else:
+        validation = {"status": "MISMATCH", "source": "ANALYST_APPROVED_CATALOG"}
+        findings.append(_finding("PRODUCT_NCM_MISMATCH", "product_ncm", "RESTRICTION"))
+    record["product_ncm_validation"] = validation
+    restriction_codes = sorted(
+        finding["code"] for finding in findings if finding["severity"] == "RESTRICTION"
+    )
+    record["restriction_codes"] = restriction_codes
+    record["eligible_for_uc003"] = not restriction_codes
+    record["content_status"] = _content_status(findings)
 
 
 def _tax_detail(container: Any | None) -> Any | None:
@@ -243,6 +336,12 @@ def _base_record(
         "referenced_document_count": 0,
         "findings": [],
         "content_status": "READY",
+        "eligible_for_uc003": True,
+        "restriction_codes": [],
+        "product_ncm_validation": {
+            "status": "NOT_APPLICABLE",
+            "source": None,
+        },
     }
 
 
@@ -308,9 +407,13 @@ def _product_records(
         )
         findings: list[dict[str, str]] = []
         if not record["description"]:
-            findings.append(_finding("DESCRIPTION_MISSING", "description", "BLOCKER"))
+            findings.append(
+                _finding("DESCRIPTION_MISSING", "description", "OBSERVATION")
+            )
         if not record["product_code"]:
-            findings.append(_finding("PRODUCT_CODE_MISSING", "product_code", "WARNING"))
+            findings.append(
+                _finding("PRODUCT_CODE_MISSING", "product_code", "OBSERVATION")
+            )
         _validate_code(
             findings,
             record["ncm"],
@@ -318,6 +421,8 @@ def _product_records(
             missing_code="NCM_MISSING",
             invalid_code="NCM_INVALID",
             pattern=r"\d{8}",
+            missing_severity="RESTRICTION",
+            invalid_severity="RESTRICTION",
         )
         _validate_code(
             findings,
@@ -328,7 +433,9 @@ def _product_records(
             pattern=r"\d{4}",
         )
         if record["gross_amount"] is None:
-            findings.append(_finding("GROSS_AMOUNT_INVALID", "gross_amount", "BLOCKER"))
+            findings.append(
+                _finding("GROSS_AMOUNT_INVALID", "gross_amount", "OBSERVATION")
+            )
         _validate_code(
             findings,
             record["cclass_trib"],
@@ -400,10 +507,10 @@ def _service_record(
     )
     findings: list[dict[str, str]] = []
     if not record["description"]:
-        findings.append(_finding("DESCRIPTION_MISSING", "description", "BLOCKER"))
+        findings.append(_finding("DESCRIPTION_MISSING", "description", "OBSERVATION"))
     if not record["service_list_code"]:
         findings.append(
-            _finding("SERVICE_LIST_CODE_MISSING", "service_list_code", "REVIEW")
+            _finding("SERVICE_LIST_CODE_MISSING", "service_list_code", "OBSERVATION")
         )
     _validate_code(
         findings,
@@ -414,9 +521,9 @@ def _service_record(
         pattern=r"\d{7}",
     )
     if record["gross_amount"] is None:
-        findings.append(_finding("GROSS_AMOUNT_INVALID", "gross_amount", "BLOCKER"))
+        findings.append(_finding("GROSS_AMOUNT_INVALID", "gross_amount", "OBSERVATION"))
     if not record["nbs"]:
-        findings.append(_finding("NBS_MISSING", "nbs", "REVIEW"))
+        findings.append(_finding("NBS_MISSING", "nbs", "OBSERVATION"))
     _validate_code(
         findings,
         record["cclass_trib"],
@@ -483,7 +590,7 @@ def _transport_record(
     findings: list[dict[str, str]] = []
     if not record["description"]:
         findings.append(
-            _finding("PREDOMINANT_PRODUCT_MISSING", "description", "REVIEW")
+            _finding("PREDOMINANT_PRODUCT_MISSING", "description", "OBSERVATION")
         )
     _validate_code(
         findings,
@@ -495,14 +602,14 @@ def _transport_record(
     )
     if not record["transport_modal"]:
         findings.append(
-            _finding("TRANSPORT_MODAL_MISSING", "transport_modal", "REVIEW")
+            _finding("TRANSPORT_MODAL_MISSING", "transport_modal", "OBSERVATION")
         )
     if not record["nature_operation"]:
         findings.append(
-            _finding("NATURE_OPERATION_MISSING", "nature_operation", "REVIEW")
+            _finding("NATURE_OPERATION_MISSING", "nature_operation", "OBSERVATION")
         )
     if record["gross_amount"] is None:
-        findings.append(_finding("GROSS_AMOUNT_INVALID", "gross_amount", "BLOCKER"))
+        findings.append(_finding("GROSS_AMOUNT_INVALID", "gross_amount", "OBSERVATION"))
     _validate_code(
         findings,
         record["cclass_trib"],
@@ -572,6 +679,7 @@ def extract_content_folder(folder: Path | str) -> dict[str, Any]:
     if not base.is_dir():
         raise ValidationError("A pasta informada não existe")
     validation = _load_validation_result(base)
+    product_ncm_catalog, catalog_summary = _load_product_ncm_catalog(base)
     authorized_records = {
         record["document_ref"]: record
         for record in validation.get("documents", {}).get("records", [])
@@ -648,6 +756,13 @@ def extract_content_folder(folder: Path | str) -> dict[str, Any]:
     content_records.sort(
         key=lambda record: (record["document_ref"], record["item_number"])
     )
+    for record in content_records:
+        if record["record_kind"] == "PRODUCT":
+            _apply_product_ncm_policy(
+                record,
+                product_ncm_catalog,
+                catalog_summary["status"] == "LOADED",
+            )
 
     flattened_findings = [
         {
@@ -666,27 +781,38 @@ def extract_content_folder(folder: Path | str) -> dict[str, Any]:
                     "document_ref": reconciliation["document_ref"],
                     "code": "DOCUMENT_PRODUCT_TOTAL_MISMATCH",
                     "field": "declared_content_total",
-                    "severity": "BLOCKER",
+                    "severity": "OBSERVATION",
                 }
             )
     blockers = [item for item in flattened_findings if item["severity"] == "BLOCKER"]
-    reviews = [item for item in flattened_findings if item["severity"] == "REVIEW"]
+    restrictions = [
+        item for item in flattened_findings if item["severity"] == "RESTRICTION"
+    ]
+    observations = [
+        item
+        for item in flattened_findings
+        if item["severity"] in {"OBSERVATION", "REVIEW", "WARNING"}
+    ]
     warnings = [item for item in flattened_findings if item["severity"] == "WARNING"]
     extraction_ready = bool(content_records) and not blockers
-    classification_ready = extraction_ready and not reviews
+    eligible_records = sum(record["eligible_for_uc003"] for record in content_records)
+    restricted_records = len(content_records) - eligible_records
+    uc003_authorized = extraction_ready and eligible_records > 0
+    classification_ready = extraction_ready and not observations and not restrictions
     status = (
         "CONTENT_BLOCKED"
         if not extraction_ready
-        else "CONTENT_REVIEW_REQUIRED"
-        if reviews
-        else "CONTENT_READY_WITH_WARNINGS"
-        if warnings
+        else "CONTENT_READY_WITH_RESTRICTIONS"
+        if restrictions
+        else "CONTENT_READY_WITH_OBSERVATIONS"
+        if observations
         else "CONTENT_READY"
     )
     analysis_material = {
         "validation_id": validation["validation_id"],
         "document_refs": sorted(authorized_records),
         "source_hashes": sorted(source_hashes),
+        "product_ncm_catalog_hash": catalog_summary["source_hash"],
         "schema_version": CONTENT_SCHEMA_VERSION,
     }
     content_analysis_id = (
@@ -727,6 +853,20 @@ def extract_content_folder(folder: Path | str) -> dict[str, Any]:
                 Counter(record["content_status"] for record in content_records).items()
             )
         ),
+        "uc003_eligibility": {
+            "eligible_records": eligible_records,
+            "restricted_records": restricted_records,
+            "restriction_counts_by_scope": dict(
+                sorted(
+                    Counter(
+                        record["analysis_scope"]
+                        for record in content_records
+                        if not record["eligible_for_uc003"]
+                    ).items()
+                )
+            ),
+        },
+        "product_ncm_catalog": catalog_summary,
         "component_count": sum(len(record["components"]) for record in content_records),
         "referenced_document_count": sum(
             record["referenced_document_count"] for record in content_records
@@ -740,16 +880,22 @@ def extract_content_folder(folder: Path | str) -> dict[str, Any]:
         },
         "gates": {
             "content_extraction_ready": extraction_ready,
+            "uc003_analysis_authorized": uc003_authorized,
+            "uc003_full_population_ready": extraction_ready and restricted_records == 0,
             "lcp214_classification_ready": classification_ready,
-            "analyst_review_required": bool(reviews),
+            "analyst_review_required": bool(observations or restrictions),
         },
         "blockers": blockers,
-        "review_findings": reviews,
+        "restrictions": restrictions,
+        "observations": observations,
+        "review_findings": observations,
         "warnings": warnings,
         "source_hashes": sorted(source_hashes),
         "limitations": [
             "O UC-002 avalia presença, formato e coerência do conteúdo; não conclui tratamento tributário.",
             "NCM, NBS, CNAE ou descrição isolados não determinam cClassTrib ou direito a crédito.",
+            "Observações não impedem o UC-003; restrições Produto x NCM afetam somente os itens correspondentes.",
+            "A comparação semântica Produto x NCM só é conclusiva contra catálogo APROVADO pelo analista.",
             "Descrições comerciais permanecem somente no JSONL local restrito.",
             "Tabelas legais e técnicas da LCP 214 serão aplicadas no UC-003.",
         ],
@@ -767,7 +913,10 @@ def _markdown_report(result: dict[str, Any]) -> str:
         f"- Situação: `{result['status']}`",
         f"- Documentos selecionados: {result['documents_selected']}",
         f"- Registros normalizados: {result['records_total']}",
+        f"- Registros liberados para UC-003: {result['uc003_eligibility']['eligible_records']}",
+        f"- Registros restritos: {result['uc003_eligibility']['restricted_records']}",
         f"- Componentes de CT-e: {result['component_count']}",
+        f"- Catálogo Produto × NCM: `{result['product_ncm_catalog']['status']}`",
         "",
         "## Registros por tipo",
         "",
@@ -804,7 +953,7 @@ def _markdown_report(result: dict[str, Any]) -> str:
         lines.append("")
     finding_counts = Counter(
         finding["code"]
-        for category in ("blockers", "review_findings", "warnings")
+        for category in ("blockers", "restrictions", "observations")
         for finding in result[category]
     )
     lines.extend(
@@ -826,7 +975,9 @@ def _markdown_report(result: dict[str, Any]) -> str:
             "## Gates",
             "",
             f"- Extração pronta: `{str(result['gates']['content_extraction_ready']).lower()}`",
-            f"- Classificação LCP 214 pronta: `{str(result['gates']['lcp214_classification_ready']).lower()}`",
+            f"- UC-003 autorizado: `{str(result['gates']['uc003_analysis_authorized']).lower()}`",
+            f"- População integral pronta: `{str(result['gates']['uc003_full_population_ready']).lower()}`",
+            f"- Completude classificatória LCP 214: `{str(result['gates']['lcp214_classification_ready']).lower()}`",
             f"- Revisão do analista necessária: `{str(result['gates']['analyst_review_required']).lower()}`",
             "",
             "## Limitações",
