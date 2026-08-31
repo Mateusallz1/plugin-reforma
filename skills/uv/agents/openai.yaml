@@ -1,0 +1,6 @@
+interface:
+  display_name: "Manutenção Python com uv"
+  short_description: "Mantém e testa explicitamente o motor Python com uv"
+  default_prompt: "Use $uv para manter, testar ou atualizar explicitamente o projeto Python com uv."
+policy:
+  allow_implicit_invocation: false

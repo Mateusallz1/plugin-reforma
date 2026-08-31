@@ -2,7 +2,7 @@
 
 ## Baseline atual
 
-- Plugin: `0.22.0+codex.20260828190704`.
+- Plugin: `0.23.0` com cachebuster local aplicado na instalação.
 - Branch: `main`.
 - Último commit publicado: `2b45532` (`refactor: retire legacy MCP runtime`).
 - Runtime ativo: Python/`uv`, sem servidor MCP no manifesto.
@@ -25,25 +25,27 @@
 - [x] Preservação do bundle Node em `legacy/mcp/` com checksum.
 - [x] Repositório Git local e remoto pessoal.
 - [x] Contexto durável em `AGENTS.md` e `README.md`.
+- [x] Skill `uv` disponível somente por invocação explícita.
+- [x] Fast path curto e orientado à execução.
 
-## Próximos ajustes, em ordem
+## Ajustes desta fase
 
-### 1. Tornar `uv` explicit-only
+### 1. Tornar `uv` explicit-only — concluído em 2026-08-31
 
-Criar ou atualizar `skills/uv/agents/openai.yaml` com `allow_implicit_invocation: false`. Manter o texto vendorizado da Astral sem alterações. A execução do motor continua usando `uv` internamente; somente o roteamento automático da skill deixa de ocorrer.
+`skills/uv/agents/openai.yaml` usa `allow_implicit_invocation: false`. O texto vendorizado da Astral permanece inalterado. A execução do motor continua usando `uv` internamente; somente o roteamento automático da skill deixa de ocorrer.
 
-Saída esperada: análises normais não carregam a skill `uv`; manutenção explícita do motor continua possível.
+Resultado: análises normais não carregam a skill `uv`; manutenção explícita do motor continua possível.
 
-### 2. Reescrever o fast path positivamente
+### 2. Reescrever o fast path positivamente — concluído em 2026-08-31
 
-Substituir a enumeração de proibições por um contrato curto:
+O contrato agora orienta:
 
 1. execute o launcher uma vez;
 2. leia os dois artefatos em `03_SAIDAS`;
 3. respeite `authorized_scopes`, `restricted_scopes` e `operational_analysis_required`;
 4. só entre em diagnóstico se o launcher falhar ou os artefatos estiverem ausentes.
 
-Não alterar o motor, os gates, a privacidade ou os códigos de saída.
+O motor, os gates, a privacidade e os códigos de saída permaneceram inalterados.
 
 ### 3. Validar a retomada em máquina limpa
 

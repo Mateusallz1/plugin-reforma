@@ -9,16 +9,16 @@ Execute o UC-001 antes de qualquer planejamento baseado em documentos fiscais.
 
 ## Caminho rápido padrão
 
-Quando o usuário indicar uma pasta para validação normal, siga este fluxo sem etapas preparatórias:
+Quando o usuário indicar uma pasta para validação normal:
 
-1. Não faça inventário prévio da pasta, não procure o motor, não verifique atualizações, não reinstale o plugin, não inspecione o código-fonte e não carregue referências antes da execução.
-2. A partir da raiz desta skill, execute uma única vez `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-validator.ps1 -Folder <pasta>`.
-3. Leia diretamente `<pasta>\03_SAIDAS\validation-result.json` e `<pasta>\03_SAIDAS\relatorio-prontidao-documental.md`. Não procure esses artefatos em outros diretórios.
-4. Não repita a validação apenas para confirmar o resultado. Repita somente quando o usuário pedir teste de determinismo ou depois de identificar e corrigir a causa de uma falha operacional.
+1. A partir da raiz desta skill, execute uma vez `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-validator.ps1 -Folder <pasta>`.
+2. Leia `<pasta>\03_SAIDAS\validation-result.json` e `<pasta>\03_SAIDAS\relatorio-prontidao-documental.md`.
+3. Para código de saída `0`, responda pelos artefatos e respeite `authorized_scopes`, `restricted_scopes` e `operational_analysis_required`.
+4. Para código `2`, informe os escopos bloqueados e pare porque nenhuma população está autorizada.
 
-O caminho rápido otimiza somente a orquestração. O launcher continua responsável por processar integralmente a pasta autorizada e aplicar todas as regras documentais do UC-001.
+O launcher instalado gerencia o runtime e aplica integralmente as regras do UC-001. Manutenção, atualização e testes de determinismo pertencem a tarefas explicitamente solicitadas.
 
-Se o código de saída for `0`, responda com base nos dois artefatos e respeite `authorized_scopes` e `restricted_scopes`; código `0` pode conter limitações de escopo. Se for `2`, nenhum escopo está autorizado: leia a política de validade, informe os bloqueadores e pare. Para qualquer outro código, artefato ausente ou ilegível, saia do caminho rápido e diagnostique a falha operacional; nesse caso, consulte [references/uc-001.md](references/uc-001.md) e inspecione somente o necessário.
+Para outro código, artefato ausente ou ilegível, diagnostique a falha operacional e consulte [references/uc-001.md](references/uc-001.md) somente no ponto necessário.
 
 ## Regras documentais
 

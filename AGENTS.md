@@ -38,7 +38,7 @@ Antes de empacotar, valide as skills e o plugin com os validadores oficiais. Dep
 
 ## Ordem de trabalho pendente
 
-Leia [docs/PLANO-DE-CONCLUSAO.md](docs/PLANO-DE-CONCLUSAO.md) antes de iniciar uma nova alteração. O próximo trabalho aprovado é tornar a skill `uv` explicit-only e reescrever o fast path em linguagem positiva, sem alterar o motor fiscal.
+Leia [docs/PLANO-DE-CONCLUSAO.md](docs/PLANO-DE-CONCLUSAO.md) antes de iniciar uma nova alteração. O próximo passo é validar a retomada em uma máquina Windows limpa; depois, homologar o modelo final de relatório do analista.
 
 ## Git e mudanças externas
 
