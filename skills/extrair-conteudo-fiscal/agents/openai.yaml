@@ -1,0 +1,6 @@
+interface:
+  display_name: "Extrair conteúdo fiscal"
+  short_description: "Normaliza produtos, serviços e transportes fiscais"
+  default_prompt: "Use $extrair-conteudo-fiscal para extrair e avaliar a qualidade do conteúdo autorizado pelo UC-001."
+policy:
+  allow_implicit_invocation: true

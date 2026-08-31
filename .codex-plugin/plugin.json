@@ -1,23 +1,25 @@
 {
   "name": "analise-empresarial-reforma-tributaria",
-  "version": "0.23.0+codex.20260831111404",
-  "description": "Valida bases documentais de NF-e, NFC-e, NFS-e e CT-e por escopo e orienta o planejamento empresarial da Reforma Tribut\u00e1ria com rastreabilidade.",
+  "version": "0.24.0+codex.20260831122320",
+  "description": "Valida bases documentais e extrai conte\u00fados de NF-e, NFC-e, NFS-e e CT-e para o planejamento empresarial rastre\u00e1vel da Reforma Tribut\u00e1ria.",
   "author": {
     "name": "Desenvolvedor local"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Planejamento da Reforma Tribut\u00e1ria",
-    "shortDescription": "Valida entradas e guia o planejamento fiscal com rastreabilidade.",
-    "longDescription": "Come\u00e7a pela valida\u00e7\u00e3o e concilia\u00e7\u00e3o da base documental, bloqueia etapas sem evid\u00eancia suficiente e organiza o planejamento empresarial da Reforma Tribut\u00e1ria.",
+    "shortDescription": "Valida documentos e prepara itens fiscais para o planejamento.",
+    "longDescription": "Come\u00e7a pela valida\u00e7\u00e3o da base documental, extrai produtos, servi\u00e7os e presta\u00e7\u00f5es de transporte dos escopos autorizados e preserva os gates de revis\u00e3o do analista antes da aplica\u00e7\u00e3o das regras tribut\u00e1rias.",
     "developerName": "Desenvolvedor local",
     "category": "Business",
     "capabilities": [
       "Analysis",
-      "Local validation"
+      "Local validation",
+      "Fiscal content extraction"
     ],
     "defaultPrompt": [
       "Valide diretamente uma pasta fiscal bruta com NF-e, NFC-e, NFS-e e CT-e antes do planejamento.",
+      "Extraia produtos, servi\u00e7os e transportes somente dos escopos documentais autorizados.",
       "Mostre os documentos e dados que bloqueiam o planejamento.",
       "Inicie o planejamento somente com entradas aprovadas."
     ]

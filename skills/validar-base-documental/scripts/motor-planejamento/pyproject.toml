@@ -1,7 +1,7 @@
 [project]
 name = "fiscal-document-intake"
 version = "0.1.0"
-description = "Validador local do UC-001 para bases NF-e/NFC-e/NFS-e/CT-e."
+description = "Validador local dos UC-001 e UC-002 para conteúdo fiscal."
 requires-python = ">=3.12"
 dependencies = [
   "defusedxml>=0.7.1,<0.8",

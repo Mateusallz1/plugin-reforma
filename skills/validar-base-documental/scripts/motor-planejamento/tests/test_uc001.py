@@ -82,7 +82,7 @@ def nfe_xml(
     <emit><CNPJ>{issuer}</CNPJ><xNome>{issuer_name}</xNome></emit>
     <dest><CNPJ>{recipient}</CNPJ><xNome>{recipient_name}</xNome></dest>
     <det nItem="1"><prod><cProd>1</cProd><xProd>ITEM SINTETICO</xProd><NCM>00000000</NCM><CFOP>5102</CFOP><qCom>1.00</qCom><vUnCom>{amount}</vUnCom><vProd>{amount}</vProd></prod><imposto/></det>
-    <total><ICMSTot><vNF>{amount}</vNF></ICMSTot></total>
+    <total><ICMSTot><vProd>{amount}</vProd><vNF>{amount}</vNF></ICMSTot></total>
   </infNFe>
 {nfe_close}
 {protocol_xml}
@@ -134,11 +134,13 @@ def cte_xml(
 {root_open}
 {cte_open}
   <infCte Id="CTe{key}" versao="4.00">
-    <ide><cUF>35</cUF><mod>57</mod><serie>1</serie><nCT>1</nCT><dhEmi>2026-03-05T12:00:00-03:00</dhEmi><toma3><toma>{taker_code}</toma></toma3></ide>
+    <ide><cUF>35</cUF><CFOP>6353</CFOP><natOp>PRESTACAO SINTETICA</natOp><mod>57</mod><serie>1</serie><nCT>1</nCT><dhEmi>2026-03-05T12:00:00-03:00</dhEmi><modal>01</modal><toma3><toma>{taker_code}</toma></toma3></ide>
     <emit><CNPJ>{issuer}</CNPJ><xNome>TRANSPORTADORA SINTETICA</xNome></emit>
     <rem><CNPJ>{sender}</CNPJ><xNome>REMETENTE SINTETICO</xNome></rem>
     <dest><CNPJ>{destination}</CNPJ><xNome>{"EMPRESA SINTETICA LTDA" if destination == COMPANY else "DESTINATARIO SINTETICO"}</xNome></dest>
-    <vPrest><vTPrest>{amount}</vTPrest><vRec>{amount}</vRec></vPrest>
+    <vPrest><vTPrest>{amount}</vTPrest><vRec>{amount}</vRec><Comp><xNome>FRETE</xNome><vComp>{amount}</vComp></Comp></vPrest>
+    <infCTeNorm><infCarga><vCarga>{amount}</vCarga><proPred>CARGA SINTETICA</proPred></infCarga></infCTeNorm>
+    <IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib></IBSCBS>
   </infCte>
 {cte_close}
 {protocol_xml}
@@ -171,6 +173,8 @@ def nfse_xml(
         <Valores><ValorServicos>{amount}</ValorServicos></Valores>
         <CodigoMunicipio>2211001</CodigoMunicipio>
         <ItemListaServico>14.01</ItemListaServico>
+        <CodigoCnae>3314710</CodigoCnae>
+        <Discriminacao>SERVICO SINTETICO</Discriminacao>
       </Servico>
       <PrestadorServico>
         <IdentificacaoPrestador><Cnpj>{provider}</Cnpj></IdentificacaoPrestador>

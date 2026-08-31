@@ -2,8 +2,9 @@
 
 ## Autoridade atual
 
-- O fluxo ativo é a skill `validar-base-documental` com motor Python gerenciado por `uv`.
+- O fluxo ativo começa em `validar-base-documental` (UC-001) e segue para `extrair-conteudo-fiscal` (UC-002), com motor Python compartilhado e gerenciado por `uv`.
 - A validação documental grava `validation-result.json` e `relatorio-prontidao-documental.md` na pasta do cliente.
+- A extração grava o resumo e o relatório em `04_CONTEUDO/`; o arquivo `normalized-items.local.jsonl` contém descrições e deve permanecer local e restrito.
 - O MCP não faz parte do runtime ativo. O legado está preservado em `legacy/mcp/` apenas para consulta e migração futura.
 - Não executar, editar ou reativar arquivos de `legacy/mcp/` durante uma análise normal.
 
@@ -15,6 +16,8 @@
 - PDFs auxiliares: DANFE, DACTE, impressões de NFS-e e livros fiscais.
 - Autorização por escopo: uma família restrita não invalida famílias independentes prontas.
 - Grupos sem ocorrência ficam `SEM_MOVIMENTACAO` e não geram análise operacional.
+- O UC-002 extrai `PRODUCT`, `SERVICE` e `TRANSPORT` somente quando `authorized_for_planning=true` e `operational_analysis_required=true` no UC-001.
+- O gate `content_extraction_ready` não libera automaticamente `lcp214_classification_ready`.
 
 ## Privacidade e evidência
 
@@ -38,7 +41,7 @@ Antes de empacotar, valide as skills e o plugin com os validadores oficiais. Dep
 
 ## Ordem de trabalho pendente
 
-Leia [docs/PLANO-DE-CONCLUSAO.md](docs/PLANO-DE-CONCLUSAO.md) antes de iniciar uma nova alteração. O próximo passo é validar a retomada em uma máquina Windows limpa; depois, homologar o modelo final de relatório do analista.
+Leia [docs/PLANO-DE-CONCLUSAO.md](docs/PLANO-DE-CONCLUSAO.md) antes de iniciar uma nova alteração. O próximo incremento funcional é o UC-003: aplicar regras versionadas da LC 214 sobre a população normalizada, mantendo evidência, vigência e aprovação do analista separadas da extração.
 
 ## Git e mudanças externas
 

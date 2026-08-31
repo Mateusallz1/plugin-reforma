@@ -1,6 +1,6 @@
 # Planejamento da Reforma Tributária
 
-Plugin local para validação documental e planejamento fiscal rastreável. A validação começa pela base de documentos e só libera as etapas seguintes nos escopos que possuem evidência suficiente.
+Plugin local para validação documental e planejamento fiscal rastreável. A validação começa pela base de documentos e só libera a extração de conteúdo nos escopos que possuem evidência suficiente. A aplicação das regras da LC 214 permanece uma etapa posterior, sujeita à revisão do analista.
 
 ## Retomar em outra máquina
 
@@ -25,6 +25,7 @@ A conversa anterior e a memória da outra máquina não são necessárias: o con
 ## Arquitetura ativa
 
 - `skills/validar-base-documental/`: coordenador do UC-001.
+- `skills/extrair-conteudo-fiscal/`: coordenador do UC-002; consome apenas documentos autorizados pelo UC-001.
 - `skills/validar-base-documental/scripts/motor-planejamento/`: motor Python determinístico gerenciado por `uv`.
 - `skills/validar-base-documental/references/`: políticas de validade, CT-e, NFS-e, grupos e autorizações por escopo.
 - `skills/uv/`: orientação vendorizada da Astral para manutenção do motor.
@@ -42,6 +43,22 @@ O UC-001 cobre NF-e, NFC-e, NFS-e ABRASF e CT-e modelo 57. O resultado separa oi
 
 Cada grupo informa se há `COM_MOVIMENTACAO`, `SEM_MOVIMENTACAO` ou `MOVIMENTACAO_RESTRITA`. Só grupos com movimentação e escopo autorizado devem gerar análise operacional.
 
+## Extração de conteúdo
+
+O UC-002 normaliza somente documentos liberados pelo UC-001:
+
+- NF-e/NFC-e: uma linha por produto, com NCM, CFOP, quantidades, valores e campos tributários disponíveis;
+- NFS-e: uma linha por serviço, com item da lista, CNAE informado, NBS, valores e ISS disponível;
+- CT-e: uma linha por prestação, com CFOP, natureza, modal, produto predominante, componentes e referências.
+
+Os artefatos são gravados em `04_CONTEUDO/`:
+
+- `content-summary.json`: agregados, cobertura, achados e gates, sem descrições comerciais;
+- `relatorio-qualidade-conteudo.md`: relatório operacional para o analista;
+- `normalized-items.local.jsonl`: conteúdo detalhado local e restrito, que não deve ser copiado para conversa ou Git.
+
+`content_extraction_ready=true` significa que a população foi extraída e reconciliada. Não significa que a classificação da LC 214 esteja concluída. O gate independente `lcp214_classification_ready` só poderá ser liberado quando as regras, tabelas oficiais e revisão do analista forem implementadas.
+
 ## Verificação local
 
 ```text
@@ -54,7 +71,7 @@ O launcher da validação é Windows/PowerShell. Node não é requisito do runti
 
 ## Dados reais
 
-Nunca faça commit de bases fiscais reais. Para testar, indique explicitamente uma pasta local do cliente. Os artefatos são gravados na própria pasta analisada, em `03_SAIDAS/`.
+Nunca faça commit de bases fiscais reais. Para testar, indique explicitamente uma pasta local do cliente. Os artefatos são gravados na própria pasta analisada, em `03_SAIDAS/` e `04_CONTEUDO/`.
 
 ## Atualizações do plugin
 

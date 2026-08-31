@@ -2,14 +2,16 @@
 
 ## Baseline atual
 
-- Plugin: `0.23.0` com cachebuster local aplicado na instalação.
+- Plugin: `0.24.0` com cachebuster local aplicado na instalação.
 - Branch: `main`; confirme `git status` e `git log -1` ao retomar, sem depender de hash gravado neste documento.
 - Runtime ativo: Python/`uv`, sem servidor MCP no manifesto.
-- Skills ativas: `uv` e `validar-base-documental`.
+- Skills ativas: `uv`, `validar-base-documental` e `extrair-conteudo-fiscal`.
 - UC-001: NF-e, NFC-e, NFS-e ABRASF e CT-e modelo 57.
 - Esquema de saída: `1.7.0`, com autorização por escopo e oito grupos operacionais.
 - Homologação real: 130 documentos incluídos, três escopos `READY`, sem bloqueadores.
-- Testes: 14 aprovados, Ruff e lock do `uv` aprovados.
+- UC-002: extração normalizada de produtos, serviços e transportes somente nos grupos operacionais autorizados.
+- Homologação real do UC-002: 130 documentos selecionados, 204 registros, 25 componentes, 44 NF-e reconciliadas e nenhum bloqueador de extração.
+- Testes: 18 aprovados, Ruff e lock do `uv` aprovados.
 
 ## Concluído
 
@@ -26,6 +28,9 @@
 - [x] Contexto durável em `AGENTS.md` e `README.md`.
 - [x] Skill `uv` disponível somente por invocação explícita.
 - [x] Fast path curto e orientado à execução.
+- [x] UC-002 com skill própria e gate dependente do UC-001.
+- [x] Extração de 118 produtos, 80 serviços e 6 transportes na base real, sem levar dados fiscais ao Git.
+- [x] Separação entre `content_extraction_ready` e `lcp214_classification_ready`.
 
 ## Ajustes desta fase
 
@@ -52,7 +57,13 @@ Clonar o repositório em outra conta Windows, instalar o plugin local, reiniciar
 
 Uma simulação local por clone isolado passou nos 14 testes e nos validadores. Ela também identificou normalização indevida de fim de linha no launcher legado; `legacy/mcp/**` passou a ser preservado como bytes opacos. Ainda falta repetir a instalação na máquina de casa.
 
-### 4. Homologar o modelo de relatório do analista
+### 4. UC-002 — extração de conteúdo concluída em 2026-08-31
+
+O UC-002 consome o `validation-result.json`, seleciona somente documentos autorizados e com análise operacional necessária, normaliza os itens e reconcilia o total de produtos das NF-e. Os achados de qualidade permanecem explícitos e não são corrigidos silenciosamente.
+
+Na base real homologada, 80 NFS-e trouxeram código de nove dígitos no campo `CodigoCnae`; o motor preservou o valor e marcou `CNAE_INVALID` para revisão, pois não corresponde ao formato nacional de sete dígitos. A ausência de NBS e cClassTrib também exige revisão, mas não bloqueia a extração.
+
+### 5. Homologar o modelo de relatório do analista
 
 Quando o modelo final do cliente estiver disponível, registrá-lo como asset/template versionado e separar claramente:
 
@@ -62,6 +73,10 @@ Quando o modelo final do cliente estiver disponível, registrá-lo como asset/te
 - conclusão sujeita à aprovação fiscal.
 
 Não colocar o modelo homologado dentro do motor de validação documental.
+
+### 6. Próximo incremento — UC-003
+
+Planejar e implementar um catálogo de regras versionado para a LC 214, separado do parser. Cada resultado deverá registrar regra, fonte oficial, vigência, campos de evidência, confiança, pendências e decisão do analista. O UC-003 não pode reinterpretar automaticamente códigos inválidos ou liberar crédito/débito apenas por NCM, NBS, CNAE ou descrição.
 
 ## Backlog condicional
 
