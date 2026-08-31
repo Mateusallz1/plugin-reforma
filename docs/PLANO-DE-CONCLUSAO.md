@@ -2,16 +2,16 @@
 
 ## Baseline atual
 
-- Plugin em desenvolvimento: `0.25.0`; a instalação ativa permanece em `0.24.0` até o próximo commit e cachebuster.
+- Plugin em desenvolvimento: `0.26.0`; a instalação ativa permanece em `0.25.0+codex.20260831133012` até o próximo commit e cachebuster.
 - Branch: `main`; confirme `git status` e `git log -1` ao retomar, sem depender de hash gravado neste documento.
 - Runtime ativo: Python/`uv`, sem servidor MCP no manifesto.
 - Skills ativas: `uv`, `validar-base-documental` e `extrair-conteudo-fiscal`.
 - UC-001: NF-e, NFC-e, NFS-e ABRASF e CT-e modelo 57.
-- Esquema de saída: `1.7.0`, com autorização por escopo e oito grupos operacionais.
+- Esquema de saída UC-001: `1.8.0`, com política de relatório, autorização por escopo e oito grupos operacionais.
 - Homologação real: 130 documentos incluídos, três escopos `READY`, sem bloqueadores.
 - UC-002: extração normalizada de produtos, serviços e transportes somente nos grupos operacionais autorizados.
 - Homologação real do UC-002: 130 documentos selecionados, 204 registros, 25 componentes, 44 NF-e reconciliadas e nenhum bloqueador de extração.
-- Testes: 21 aprovados após a política de elegibilidade do UC-003; Ruff e lock do `uv` devem ser revalidados antes do commit.
+- Testes: 22 aprovados após a política de relatório complementar e a elegibilidade do UC-003; Ruff e lock do `uv` aprovados.
 
 ## Concluído
 
@@ -34,6 +34,9 @@
 - [x] Observações do UC-002 sem bloqueio do início do UC-003.
 - [x] Restrição por item para NCM ausente/malformado ou divergência confirmada Produto × NCM.
 - [x] Catálogo opcional homologado pelo analista, sem inferência bloqueante por descrição.
+- [x] Política de relatório `COMPLEMENTARY` explícita e retrocompatível; `WHITELIST` reservado para evolução futura.
+
+A homologação real da política `COMPLEMENTARY` preservou 130 documentos incluídos e `planning_authorized=true`; sem relatório disponível, `reconciliation_ready=false` e 130 ocorrências `XML_WITHOUT_REPORT` permaneceram como avisos. O UC-002 consumiu o schema 1.8.0 sem regressão e manteve 204 registros elegíveis para o UC-003.
 
 ## Ajustes desta fase
 

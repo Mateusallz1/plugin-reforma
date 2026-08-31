@@ -43,6 +43,7 @@ REQUIRED_REPORT_COLUMNS = {
     "generated_at",
 }
 ALLOWED_REPORT_STATUSES = {"AUTHORIZED", "CANCELLED", "UNKNOWN"}
+REPORT_POPULATION_POLICY = "COMPLEMENTARY"
 ALLOWED_SOURCE_TYPES = {
     "AUTHORITY_REPORT",
     "ERP_REPORT",
@@ -252,6 +253,14 @@ def _load_scope(folder: Path) -> dict[str, Any]:
         raise ValidationError("objective deve ser VALIDATE_DOCUMENT_BASE")
     if scope.get("validation_policy") != "DOCUMENTARY_INITIAL":
         raise ValidationError("validation_policy deve ser DOCUMENTARY_INITIAL")
+    report_population_policy = scope.get(
+        "report_population_policy", REPORT_POPULATION_POLICY
+    )
+    if report_population_policy != REPORT_POPULATION_POLICY:
+        raise ValidationError(
+            "report_population_policy aceita somente COMPLEMENTARY nesta versão"
+        )
+    scope["report_population_policy"] = REPORT_POPULATION_POLICY
     families = scope.get("document_families")
     if (
         not isinstance(families, list)
@@ -351,6 +360,7 @@ def _discover_scope(
         "objective": "VALIDATE_DOCUMENT_BASE",
         "document_families": families,
         "validation_policy": "DOCUMENTARY_INITIAL",
+        "report_population_policy": REPORT_POPULATION_POLICY,
         "analysis_cutoff": datetime.fromtimestamp(last_modified)
         .astimezone()
         .isoformat(timespec="seconds"),
@@ -1609,6 +1619,7 @@ def validate_folder(folder: Path | str) -> dict[str, Any]:
             "document_families": scope["document_families"],
             "analysis_cutoff": scope["analysis_cutoff"],
             "validation_policy": scope["validation_policy"],
+            "report_population_policy": scope["report_population_policy"],
             "input_mode": scope["input_mode"],
         },
         "source_hashes": sorted(all_hashes + report_hashes),
@@ -1714,7 +1725,7 @@ def validate_folder(folder: Path | str) -> dict[str, Any]:
     ]
     result = {
         "schema": "br.com.planejamento-reforma-tributaria/document-base-validation",
-        "schema_version": "1.7.0",
+        "schema_version": "1.8.0",
         "use_case": "UC-001",
         "validation_id": validation_id,
         "status": (
@@ -1761,6 +1772,7 @@ def validate_folder(folder: Path | str) -> dict[str, Any]:
             "records": pdf_records,
         },
         "reconciliation": {
+            "population_policy": scope["report_population_policy"],
             "status_counts": dict(
                 sorted(Counter(item["status"] for item in reconciliations).items())
             ),
@@ -1793,6 +1805,7 @@ def validate_folder(folder: Path | str) -> dict[str, Any]:
             "A situação atual não foi consultada na autoridade fiscal.",
             "A assinatura digital não foi validada criptograficamente.",
             "Os XMLs não foram validados contra XSD oficial nesta versão do piloto.",
+            "Relatórios são conciliados como fonte complementar e não filtram XMLs documentalmente válidos.",
             "NFS-e é validada documentalmente a partir do XML fornecido, sem consulta atual à prefeitura.",
             "CT-e é validado no modelo 57, leiaute 4.00, quando a empresa é emitente ou tomadora identificável.",
             "O UC-001 suporta NF-e, NFC-e, NFS-e ABRASF com InfNfse, CT-e modelo 57 e cancelamentos de NF-e fornecidos na pasta.",
@@ -1820,6 +1833,7 @@ def _markdown_report(result: dict[str, Any]) -> str:
         f"- Estabelecimento: `{result['scope']['establishment_ref']}`",
         f"- Competência: `{result['scope']['period']}`",
         f"- Modo de entrada: `{result['scope']['input_mode']}`",
+        f"- Política do relatório: `{result['scope']['report_population_policy']}`",
         f"- Data de corte: `{result['scope']['analysis_cutoff']}`",
         "",
         "## Cobertura",

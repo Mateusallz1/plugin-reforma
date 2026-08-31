@@ -7,5 +7,6 @@
   "objective": "VALIDATE_DOCUMENT_BASE",
   "document_families": ["NFE", "NFCE", "NFSE", "CTE"],
   "validation_policy": "DOCUMENTARY_INITIAL",
+  "report_population_policy": "COMPLEMENTARY",
   "analysis_cutoff": "2026-08-27T00:00:00-03:00"
 }

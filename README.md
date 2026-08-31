@@ -43,6 +43,8 @@ O UC-001 cobre NF-e, NFC-e, NFS-e ABRASF e CT-e modelo 57. O resultado separa oi
 
 Cada grupo informa se há `COM_MOVIMENTACAO`, `SEM_MOVIMENTACAO` ou `MOVIMENTACAO_RESTRITA`. Só grupos com movimentação e escopo autorizado devem gerar análise operacional.
 
+Relatórios CSV/XLSX usam a política `COMPLEMENTARY`: conciliam população, situação e valores, mas não filtram XMLs documentalmente válidos nem incluem notas declaradas sem XML. O campo opcional `report_population_policy` do `escopo.json` assume esse valor; `WHITELIST` permanece reservado para evolução futura.
+
 ## Extração de conteúdo
 
 O UC-002 normaliza somente documentos liberados pelo UC-001:

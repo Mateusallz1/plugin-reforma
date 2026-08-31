@@ -16,6 +16,7 @@
 - PDFs auxiliares: DANFE, DACTE, impressões de NFS-e e livros fiscais.
 - Autorização por escopo: uma família restrita não invalida famílias independentes prontas.
 - Grupos sem ocorrência ficam `SEM_MOVIMENTACAO` e não geram análise operacional.
+- Relatórios usam `report_population_policy=COMPLEMENTARY`: divergências são avisos, XML válido não é filtrado e nota declarada sem XML não é incluída. Não implemente `WHITELIST` sem solicitação explícita e novos testes.
 - O UC-002 extrai `PRODUCT`, `SERVICE` e `TRANSPORT` somente quando `authorized_for_planning=true` e `operational_analysis_required=true` no UC-001.
 - Observações do UC-002 não impedem o UC-003; use `uc003_analysis_authorized` como gate operacional e preserve `lcp214_classification_ready` apenas como indicador de completude.
 - Produto com NCM ausente/malformado ou divergente de catálogo `APROVADO` fica restrito por item; não bloqueie serviços, transportes ou outros produtos elegíveis.

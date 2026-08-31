@@ -1,6 +1,6 @@
 {
   "name": "analise-empresarial-reforma-tributaria",
-  "version": "0.25.0+codex.20260831133012",
+  "version": "0.26.0+codex.20260831141112",
   "description": "Valida bases documentais e extrai conte\u00fados de NF-e, NFC-e, NFS-e e CT-e para o planejamento empresarial rastre\u00e1vel da Reforma Tribut\u00e1ria.",
   "author": {
     "name": "Desenvolvedor local"

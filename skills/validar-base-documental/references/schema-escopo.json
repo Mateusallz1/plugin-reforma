@@ -31,6 +31,10 @@
       "items": { "enum": ["NFE", "NFCE", "NFSE", "CTE"] }
     },
     "validation_policy": { "const": "DOCUMENTARY_INITIAL" },
+    "report_population_policy": {
+      "const": "COMPLEMENTARY",
+      "default": "COMPLEMENTARY"
+    },
     "analysis_cutoff": { "type": "string", "format": "date-time" }
   }
 }

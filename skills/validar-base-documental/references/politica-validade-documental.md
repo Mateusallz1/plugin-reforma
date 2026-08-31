@@ -20,7 +20,7 @@ Somente documentos identificados, coerentes, pertencentes ao escopo, não cancel
 
 `VALID_DOCUMENTARY` não significa situação atual confirmada na autoridade, assinatura criptográfica validada, classificação fiscal correta, direito a crédito ou conformidade tributária. Quando uma NFS-e reconhecida não trouxer situação explícita, emita `NFSE_STATUS_NOT_EMBEDDED`; a nota permanece documentalmente utilizável, mas a situação atual na prefeitura continua não confirmada.
 
-Relatórios são fontes paralelas e opcionais. Eles podem apoiar a checagem de população, situação declarada e totais, mas não substituem detalhes ausentes do XML. Sua ausência ou divergência gera aviso, nunca rebaixa por si só uma base documental válida.
+Relatórios são fontes paralelas e opcionais sob `report_population_policy=COMPLEMENTARY`. Eles apoiam a checagem de população, situação declarada e totais, mas não substituem detalhes ausentes do XML, não excluem XML documentalmente válido e não incluem nota declarada sem XML. Sua ausência ou divergência gera aviso, nunca rebaixa por si só uma base documental válida. `WHITELIST` fica reservado para uma evolução futura e não é aceito nesta versão.
 
 DANFE, DACTE, impressão de NFS-e e livro fiscal em PDF são representações auxiliares. Relacione-os ao XML por chave ou identificador dentro da mesma empresa, competência e direção. PDF sem XML não autoriza análise por item nem compõe totais fiscais. PDF ilegível ou sem identificador permanece como aviso de cobertura.
 

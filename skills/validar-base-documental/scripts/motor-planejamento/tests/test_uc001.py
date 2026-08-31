@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from fiscal_document_intake.cli import main
 from fiscal_document_intake.core import (
+    ValidationError,
     validate_access_key,
     validate_folder,
     write_outputs,
@@ -214,6 +215,7 @@ def make_folder(
         "objective": "VALIDATE_DOCUMENT_BASE",
         "document_families": document_families or ["NFE", "NFCE"],
         "validation_policy": "DOCUMENTARY_INITIAL",
+        "report_population_policy": "COMPLEMENTARY",
         "analysis_cutoff": "2026-08-27T00:00:00-03:00",
     }
     (folder / "00_CONTROLE" / "escopo.json").write_text(
@@ -341,6 +343,9 @@ def test_ready_end_to_end_csv_is_deterministic_and_private(tmp_path: Path) -> No
 
     assert first == second
     assert first["status"] == "DOCUMENT_BASE_READY"
+    assert first["schema_version"] == "1.8.0"
+    assert first["scope"]["report_population_policy"] == "COMPLEMENTARY"
+    assert first["reconciliation"]["population_policy"] == "COMPLEMENTARY"
     assert first["gates"]["planning_authorized"] is True
     assert first["documents"]["included"] == 2
     assert first["documents"]["analysis_groups"]["NFE_ENTRADAS"]["count"] == 1
@@ -481,6 +486,39 @@ def test_report_is_optional_and_only_produces_warnings(tmp_path: Path) -> None:
     warning_codes = {item["code"] for item in result["warnings"]}
     assert warning_codes == {"REPORT_MISSING", "XML_WITHOUT_REPORT"}
     assert main(["validate", str(folder)]) == 0
+
+
+def test_report_population_policy_defaults_and_rejects_whitelist(
+    tmp_path: Path,
+) -> None:
+    legacy = make_folder(tmp_path, "legacy-report-policy")
+    legacy_scope_path = legacy / "00_CONTROLE" / "escopo.json"
+    legacy_scope = json.loads(legacy_scope_path.read_text(encoding="utf-8"))
+    legacy_scope.pop("report_population_policy")
+    legacy_scope_path.write_text(json.dumps(legacy_scope), encoding="utf-8")
+    key = access_key(COMPANY, "55", 24)
+    (legacy / "01_XML" / "nota.xml").write_text(
+        nfe_xml(key, "55", COMPANY, OTHER, "2026-03-05", "90.00"),
+        encoding="utf-8",
+    )
+
+    result = validate_folder(legacy)
+
+    assert result["scope"]["report_population_policy"] == "COMPLEMENTARY"
+    assert result["gates"]["planning_authorized"] is True
+
+    whitelist = make_folder(tmp_path, "unsupported-whitelist")
+    whitelist_scope_path = whitelist / "00_CONTROLE" / "escopo.json"
+    whitelist_scope = json.loads(whitelist_scope_path.read_text(encoding="utf-8"))
+    whitelist_scope["report_population_policy"] = "WHITELIST"
+    whitelist_scope_path.write_text(json.dumps(whitelist_scope), encoding="utf-8")
+    (whitelist / "01_XML" / "nota.xml").write_text(
+        nfe_xml(key, "55", COMPANY, OTHER, "2026-03-05", "90.00"),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="somente COMPLEMENTARY"):
+        validate_folder(whitelist)
 
 
 def test_raw_folder_discovers_scope_pdfs_and_directions(tmp_path: Path) -> None:
