@@ -2,16 +2,16 @@
 
 ## Baseline atual
 
-- Plugin em desenvolvimento: `0.26.0`; a instalação ativa permanece em `0.25.0+codex.20260831133012` até o próximo commit e cachebuster.
+- Plugin em desenvolvimento: `0.28.0`; a instalação ativa permanece em `0.26.0+codex.20260831141112` até o próximo commit e cachebuster.
 - Branch: `main`; confirme `git status` e `git log -1` ao retomar, sem depender de hash gravado neste documento.
 - Runtime ativo: Python/`uv`, sem servidor MCP no manifesto.
-- Skills ativas: `uv`, `validar-base-documental` e `extrair-conteudo-fiscal`.
+- Skills no fonte: `uv`, `validar-base-documental`, `extrair-conteudo-fiscal`, `revisar-aquisicoes` e `revisar-receitas`.
 - UC-001: NF-e, NFC-e, NFS-e ABRASF e CT-e modelo 57.
 - Esquema de saída UC-001: `1.8.0`, com política de relatório, autorização por escopo e oito grupos operacionais.
 - Homologação real: 130 documentos incluídos, três escopos `READY`, sem bloqueadores.
 - UC-002: extração normalizada de produtos, serviços e transportes somente nos grupos operacionais autorizados.
 - Homologação real do UC-002: 130 documentos selecionados, 204 registros, 25 componentes, 44 NF-e reconciliadas e nenhum bloqueador de extração.
-- Testes: 22 aprovados após a política de relatório complementar e a elegibilidade do UC-003; Ruff e lock do `uv` aprovados.
+- Testes: 33 aprovados com as revisões de aquisições e receitas; Ruff, formatação e lock do `uv` aprovados.
 
 ## Concluído
 
@@ -35,6 +35,13 @@
 - [x] Restrição por item para NCM ausente/malformado ou divergência confirmada Produto × NCM.
 - [x] Catálogo opcional homologado pelo analista, sem inferência bloqueante por descrição.
 - [x] Política de relatório `COMPLEMENTARY` explícita e retrocompatível; `WHITELIST` reservado para evolução futura.
+- [x] UC-003 inicial com separação de mercadorias, serviços e transportes adquiridos.
+- [x] Snapshot oficial IT 2025.002 v1.60 com 18 CSTs, 164 pares cClassTrib e hash do XLSX de origem.
+- [x] Fila local de classificação e aprovação explícita do analista.
+- [x] Validação de par declarado por vigência e aplicabilidade ao tipo de DF-e, sem concluir crédito.
+- [x] UC-003B com valor total do documento e classificação das saídas por CFOP.
+- [x] Snapshot CFOP IT 2023.002 v2.00, publicado em 25/08/2026, com 619 códigos e hash do XLSX.
+- [x] Devoluções e remessas orientadas pelos indicadores oficiais, com checklist do analista separado.
 
 A homologação real da política `COMPLEMENTARY` preservou 130 documentos incluídos e `planning_authorized=true`; sem relatório disponível, `reconciliation_ready=false` e 130 ocorrências `XML_WITHOUT_REPORT` permaneceram como avisos. O UC-002 consumiu o schema 1.8.0 sem regressão e manteve 204 registros elegíveis para o UC-003.
 
@@ -84,9 +91,19 @@ Quando o modelo final do cliente estiver disponível, registrá-lo como asset/te
 
 Não colocar o modelo homologado dentro do motor de validação documental.
 
-### 6. Próximo incremento — UC-003
+### 6. UC-003 — revisão inicial das aquisições
 
-Planejar e implementar um catálogo de regras versionado para a LC 214, separado do parser. Cada resultado deverá registrar regra, fonte oficial, vigência, campos de evidência, confiança, pendências e decisão do analista. O UC-003 não pode reinterpretar automaticamente códigos inválidos ou liberar crédito/débito apenas por NCM, NBS, CNAE ou descrição.
+O piloto seleciona entradas elegíveis do UC-002, classifica o fluxo como compra de mercadoria, serviço ou transporte, valida CST/cClassTrib declarado no snapshot oficial e gera a fila de naturezas para o analista. O `ruleset-lock.json` torna cada execução reproduzível.
+
+Na homologação real, 204 registros originaram 70 aquisições: 63 mercadorias, 1 serviço tomado e 6 transportes tomados. O snapshot confirmou 29 pares CST/cClassTrib e manteve 41 registros com evidência pendente; todas as 70 naturezas aguardam aprovação do analista.
+
+Ainda falta homologar a fila real e implementar as regras materiais que avaliarão hipóteses de crédito. Até lá, `uc004_planning_authorized=false`.
+
+### 7. UC-003B — revisão inicial das receitas
+
+O piloto combina total documental do UC-001 com CFOPs dos itens do UC-002. Notas mistas ou diferenças entre `vNF` e `vProd` ficam pendentes, sem rateio automático.
+
+Na base real, 29 NF-e de venda somaram R$ 51.345,00 e 79 NFS-e prestadas somaram R$ 66.160,00. A receita operacional documental candidata foi R$ 117.505,00, sem devoluções, remessas, pendências ou componentes não alocados. A população de receita ficou pronta, mas o UC-004 permanece não autorizado.
 
 ## Backlog condicional
 

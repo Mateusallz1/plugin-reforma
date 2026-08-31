@@ -26,6 +26,8 @@ A conversa anterior e a memória da outra máquina não são necessárias: o con
 
 - `skills/validar-base-documental/`: coordenador do UC-001.
 - `skills/extrair-conteudo-fiscal/`: coordenador do UC-002; consome apenas documentos autorizados pelo UC-001.
+- `skills/revisar-aquisicoes/`: coordenador do UC-003; separa compras e gera fila para decisão do analista.
+- `skills/revisar-receitas/`: segunda frente do UC-003; separa vendas, devoluções, remessas e operações pendentes.
 - `skills/validar-base-documental/scripts/motor-planejamento/`: motor Python determinístico gerenciado por `uv`.
 - `skills/validar-base-documental/references/`: políticas de validade, CT-e, NFS-e, grupos e autorizações por escopo.
 - `skills/uv/`: orientação vendorizada da Astral para manutenção do motor.
@@ -64,6 +66,20 @@ Os artefatos são gravados em `04_CONTEUDO/`:
 Observações de CNAE, NBS, `cClassTrib`, CFOP, descrição, valores ou reconciliação não impedem o início do UC-003. O gate `uc003_analysis_authorized` indica se existe população elegível; `uc003_full_population_ready` indica se nenhum item foi restringido.
 
 Para validar Produto × NCM contra decisão do analista, coloque opcionalmente `00_CONTROLE/catalogo-produtos-ncm.csv` na pasta analisada, com as colunas `codigo_produto`, `ncm_aprovado` e `status`. Somente linhas `APROVADO` podem confirmar divergência. Sem catálogo ou sem correspondência, o motor registra observação e permite avanço provisório; NCM ausente/malformado ou divergente restringe somente o produto afetado.
+
+## Revisão das aquisições
+
+O UC-003 seleciona somente registros de entrada e os separa em `PURCHASE_GOODS`, `PURCHASE_SERVICES` e `PURCHASE_TRANSPORT`. A finalidade econômica não é inferida: o analista pode aprová-la em `00_CONTROLE/classificacao-aquisicoes.csv`; sem decisão, o registro permanece pendente.
+
+O par CST/cClassTrib declarado é validado contra snapshot versionado da tabela oficial. Antes de cada execução da skill, a versão publicada deve ser conferida no Portal NF-e. Atualização oficial exige novo snapshot, testes e versão do plugin; uma análise nunca muda silenciosamente de ruleset.
+
+As saídas ficam em `05_REVISAO_AQUISICOES/`. O UC-003 inicial não determina direito a crédito e mantém `uc004_planning_authorized=false`.
+
+## Revisão das receitas
+
+O UC-003B usa o total do documento do UC-001 e os CFOPs dos itens do UC-002. O snapshot oficial CFOP identifica devoluções, retornos, anulações e remessas; o ruleset do analista reconhece CFOPs usuais de venda sem tratá-los como lista exaustiva.
+
+As saídas ficam em `06_REVISAO_RECEITAS/` e separam receita documental bruta, devoluções de venda, operações fora da receita, tratamento pendente e diferenças entre `vNF` e soma de `vProd`. `net_documentary_revenue_candidate` não representa receita tributável concluída.
 
 ## Verificação local
 

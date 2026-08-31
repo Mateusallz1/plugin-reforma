@@ -43,6 +43,7 @@ outputs/
 *.zip
 *.csv
 !skills/validar-base-documental/assets/modelos-de-entrada/*.exemplo.csv
+!skills/revisar-aquisicoes/assets/*.exemplo.csv
 
 # Editors and operating systems
 .idea/

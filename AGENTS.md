@@ -2,7 +2,7 @@
 
 ## Autoridade atual
 
-- O fluxo ativo começa em `validar-base-documental` (UC-001) e segue para `extrair-conteudo-fiscal` (UC-002), com motor Python compartilhado e gerenciado por `uv`.
+- O fluxo ativo começa em `validar-base-documental` (UC-001), segue para `extrair-conteudo-fiscal` (UC-002) e para as frentes `revisar-aquisicoes` e `revisar-receitas` do UC-003, com motor Python compartilhado e gerenciado por `uv`.
 - A validação documental grava `validation-result.json` e `relatorio-prontidao-documental.md` na pasta do cliente.
 - A extração grava o resumo e o relatório em `04_CONTEUDO/`; o arquivo `normalized-items.local.jsonl` contém descrições e deve permanecer local e restrito.
 - O MCP não faz parte do runtime ativo. O legado está preservado em `legacy/mcp/` apenas para consulta e migração futura.
@@ -21,6 +21,10 @@
 - Observações do UC-002 não impedem o UC-003; use `uc003_analysis_authorized` como gate operacional e preserve `lcp214_classification_ready` apenas como indicador de completude.
 - Produto com NCM ausente/malformado ou divergente de catálogo `APROVADO` fica restrito por item; não bloqueie serviços, transportes ou outros produtos elegíveis.
 - Sem catálogo Produto × NCM ou sem correspondência por `cProd`, registre inconclusão e permita avanço provisório. Não confirme incompatibilidade por similaridade textual.
+- O UC-003 revisa somente entradas e não infere natureza econômica ou direito a crédito. Decisões exigem `status=APROVADO` no arquivo local do analista.
+- Antes de usar a tabela CST/cClassTrib, confira a publicação oficial atual. Divergência de versão exige manutenção explícita do snapshot e nova bateria de testes.
+- A revisão de receitas usa o total do documento, direção e CFOP. CFOP de venda em entrada continua sendo compra; remessa, retorno, anulação e devolução de compra ficam fora da receita operacional.
+- Checklist do analista complementa a tabela CFOP oficial e não é exaustivo. `ind_excluded_ibs_cbs` não equivale sozinho a operação sem receita.
 
 ## Privacidade e evidência
 

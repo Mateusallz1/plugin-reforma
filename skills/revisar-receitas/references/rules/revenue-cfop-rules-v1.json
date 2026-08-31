@@ -1,0 +1,31 @@
+{
+  "schema": "br.com.planejamento-reforma-tributaria/revenue-cfop-rules",
+  "schema_version": "1.0.0",
+  "ruleset_id": "REVENUE-CFOP-ANALYST-V1",
+  "approved_at": "2026-08-31",
+  "source": "ANALYST_CHECKLIST",
+  "usual_sale_cfops": [
+    "5101",
+    "5102",
+    "5401",
+    "5403",
+    "5405",
+    "6101",
+    "6102",
+    "6107",
+    "6108",
+    "6401",
+    "6403",
+    "6404"
+  ],
+  "sales_return_inbound_cfops": [
+    "1201",
+    "1202",
+    "1410",
+    "1411",
+    "2201",
+    "2202",
+    "2410",
+    "2411"
+  ]
+}

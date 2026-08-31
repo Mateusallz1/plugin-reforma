@@ -1,0 +1,6 @@
+interface:
+  display_name: "Revisar aquisições"
+  short_description: "Classifica compras e prepara revisão fiscal"
+  default_prompt: "Use $revisar-aquisicoes para revisar mercadorias, serviços e transportes adquiridos após o UC-002, usando fontes oficiais atuais e aprovação do analista."
+policy:
+  allow_implicit_invocation: true
