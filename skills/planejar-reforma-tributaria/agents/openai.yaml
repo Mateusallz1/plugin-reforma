@@ -1,0 +1,6 @@
+interface:
+  display_name: "Planejar Reforma Tributária"
+  short_description: "Conduz o planejamento fiscal passo a passo"
+  default_prompt: "Use $planejar-reforma-tributaria para continuar o planejamento da empresa a partir da pasta informada."
+policy:
+  allow_implicit_invocation: true

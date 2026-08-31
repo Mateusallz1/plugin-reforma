@@ -8,7 +8,12 @@ from pathlib import Path
 from .acquisition import review_acquisitions_folder, write_acquisition_outputs
 from .content import extract_content_folder, write_content_outputs
 from .core import ValidationError, validate_folder, write_outputs
+from .planning_status import evaluate_planning_status, write_planning_status_outputs
 from .revenue import review_revenue_folder, write_revenue_outputs
+from .simple_reconciliation import (
+    reconcile_simple_revenue,
+    write_simple_reconciliation_outputs,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,6 +43,20 @@ def build_parser() -> argparse.ArgumentParser:
     revenue.add_argument("--cfop-ruleset", type=Path, required=True)
     revenue.add_argument("--analyst-rules", type=Path, required=True)
     revenue.add_argument("--output-dir", type=Path)
+    simple_reconciliation = subparsers.add_parser(
+        "reconcile-simple-revenue",
+        help="Conciliar a receita do UC-003B com uma declaração PGDAS-D",
+    )
+    simple_reconciliation.add_argument("folder", type=Path)
+    simple_reconciliation.add_argument("--pgdas-folder", type=Path, required=True)
+    simple_reconciliation.add_argument("--output-dir", type=Path)
+    planning_status = subparsers.add_parser(
+        "planning-status",
+        help="Identificar o estágio atual e a próxima ação útil do planejamento",
+    )
+    planning_status.add_argument("folder", type=Path)
+    planning_status.add_argument("--pgdas-folder", type=Path)
+    planning_status.add_argument("--output-dir", type=Path)
     return parser
 
 
@@ -87,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
                 ],
                 "outputs": [path.name for path in written],
             }
-        else:
+        elif args.command == "review-revenue":
             result = review_revenue_folder(
                 args.folder, args.cfop_ruleset, args.analyst_rules
             )
@@ -103,6 +122,40 @@ def main(argv: list[str] | None = None) -> int:
                 "uc004_planning_authorized": result["gates"][
                     "uc004_planning_authorized"
                 ],
+                "outputs": [path.name for path in written],
+            }
+        elif args.command == "reconcile-simple-revenue":
+            result = reconcile_simple_revenue(args.folder, args.pgdas_folder)
+            output_dir = args.output_dir or args.folder / "07_CONCILIACAO_SIMPLES"
+            written = write_simple_reconciliation_outputs(result, output_dir)
+            ready = result["gates"]["documentary_scope_reconciled"]
+            response = {
+                "status": result["status"],
+                "reconciliation_id": result["reconciliation_id"],
+                "documentary_scope_reconciled": ready,
+                "group_coverage_complete": result["gates"]["group_coverage_complete"],
+                "analyst_review_required": result["gates"]["analyst_review_required"],
+                "uc004_planning_authorized": result["gates"][
+                    "uc004_planning_authorized"
+                ],
+                "outputs": [path.name for path in written],
+            }
+        else:
+            result = evaluate_planning_status(args.folder, args.pgdas_folder)
+            output_dir = args.output_dir or args.folder / "08_STATUS_PLANEJAMENTO"
+            written = write_planning_status_outputs(result, output_dir)
+            ready = True
+            response = {
+                "status": result["status"],
+                "state_id": result["state_id"],
+                "current_stage": result["current_stage"],
+                "next_actions": [
+                    action["action"] for action in result["available_actions"]
+                ],
+                "required_inputs": [
+                    item["input_id"] for item in result["required_inputs"]
+                ],
+                "can_continue_partially": result["can_continue_partially"],
                 "outputs": [path.name for path in written],
             }
     except ValidationError as error:

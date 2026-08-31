@@ -2,9 +2,9 @@
 
 ## Autoridade atual
 
-- O fluxo ativo começa em `validar-base-documental` (UC-001), segue para `extrair-conteudo-fiscal` (UC-002) e para as frentes `revisar-aquisicoes` e `revisar-receitas` do UC-003, com motor Python compartilhado e gerenciado por `uv`.
+- A porta de entrada para o usuário é `planejar-reforma-tributaria`. Ela consulta `planning-status`, executa as próximas ações autorizadas e apresenta somente o que foi concluído, o que falta, o impacto e a próxima ação. As skills UC-001 a UC-003C permanecem como componentes operacionais.
 - A validação documental grava `validation-result.json` e `relatorio-prontidao-documental.md` na pasta do cliente.
-- As etapas gravam artefatos em `03_SAIDAS/`, `04_CONTEUDO/`, `05_REVISAO_AQUISICOES/` e `06_REVISAO_RECEITAS/`. Arquivos `*.local.jsonl` contêm detalhes comerciais e devem permanecer locais e restritos.
+- As etapas gravam artefatos em `03_SAIDAS/`, `04_CONTEUDO/`, `05_REVISAO_AQUISICOES/`, `06_REVISAO_RECEITAS/`, `07_CONCILIACAO_SIMPLES/` e `08_STATUS_PLANEJAMENTO/`. Arquivos `*.local.jsonl` contêm detalhes comerciais e devem permanecer locais e restritos.
 - O motor compartilhado fica em `engine/`; `scripts/invoke-engine.ps1` é a única autoridade para preparar o ambiente `uv` e executar o CLI.
 - O MCP não faz parte do runtime ativo. O legado está preservado em `legacy/mcp/` apenas para consulta e migração futura.
 - Não executar, editar ou reativar arquivos de `legacy/mcp/` durante uma análise normal.
@@ -26,6 +26,9 @@
 - Antes de usar a tabela CST/cClassTrib, confira a publicação oficial atual. Divergência de versão exige manutenção explícita do snapshot e nova bateria de testes.
 - A revisão de receitas usa o total do documento, direção e CFOP. CFOP de venda em entrada continua sendo compra; remessa, retorno, anulação e devolução de compra ficam fora da receita operacional.
 - Checklist do analista complementa a tabela CFOP oficial e não é exaustivo. `ind_excluded_ibs_cbs` não equivale sozinho a operação sem receita.
+- O UC-003C usa a declaração PGDAS-D como autoridade, concilia primeiro por estabelecimento e atividade e preserva cobertura parcial. Ausência de suporte documental não comprova não emissão; `non_issuance_confirmed` permanece falso sem decisão humana expressa.
+- O PGDAS-D de 2026 usa as regras vigentes da competência. Não aplique retroativamente regras de reconhecimento de faturamento com vigência a partir de 2027.
+- Respostas normais do coordenador não exibem nomes de gates, códigos de saída, hashes ou pastas técnicas. Traduza pendências em linguagem comum e diga se bloqueiam uma frente, um estabelecimento ou todo o fluxo.
 
 ## Privacidade e evidência
 

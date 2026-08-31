@@ -24,10 +24,12 @@ A conversa anterior e a memória da outra máquina não são necessárias: o con
 
 ## Arquitetura ativa
 
+- `skills/planejar-reforma-tributaria/`: porta de entrada user-facing; identifica o estágio, executa ações autorizadas e solicita somente a próxima entrada indispensável.
 - `skills/validar-base-documental/`: coordenador do UC-001.
 - `skills/extrair-conteudo-fiscal/`: coordenador do UC-002; consome apenas documentos autorizados pelo UC-001.
 - `skills/revisar-aquisicoes/`: coordenador do UC-003; separa compras e gera fila para decisão do analista.
 - `skills/revisar-receitas/`: segunda frente do UC-003; separa vendas, devoluções, remessas e operações pendentes.
+- `skills/conciliar-faturamento-simples/`: UC-003C; concilia o UC-003B com o PGDAS-D por estabelecimento e atividade.
 - `engine/`: motor Python determinístico compartilhado e gerenciado por `uv`.
 - `scripts/invoke-engine.ps1`: bootstrap único do ambiente e do executável usado pelos launchers das skills.
 - `skills/validar-base-documental/references/`: políticas de validade, CT-e, NFS-e, grupos e autorizações por escopo.
@@ -82,6 +84,18 @@ O UC-003B usa o total do documento do UC-001 e os CFOPs dos itens do UC-002. O s
 
 As saídas ficam em `06_REVISAO_RECEITAS/` e separam receita documental bruta, devoluções de venda, operações fora da receita, tratamento pendente e diferenças entre `vNF` e soma de `vProd`. `net_documentary_revenue_candidate` não representa receita tributável concluída.
 
+## Conciliação do Simples Nacional
+
+O UC-003C recebe uma pasta de PDFs do PGDAS-D explicitamente indicada e usa a declaração oficial como autoridade dos valores declarados. A comparação ocorre primeiro por estabelecimento e atividade; um PGDAS-D consolidado com filial não é comparado diretamente a uma base documental apenas da matriz.
+
+As saídas ficam em `07_CONCILIACAO_SIMPLES/`. Cobertura parcial gera fila para o analista sem presumir não emissão. Recibo e extrato são evidências complementares, DAS não comprova pagamento e memória do sistema contábil não substitui a declaração oficial. O estágio não conclui IBS/CBS e mantém `uc004_planning_authorized=false`.
+
+## Experiência do usuário
+
+Use `planejar-reforma-tributaria` para iniciar ou retomar. O coordenador grava `08_STATUS_PLANEJAMENTO/`, detecta artefatos já existentes e executa as próximas etapas seguras sem exigir que o usuário conheça UCs, launchers, códigos de saída ou gates.
+
+Quando depender de uma decisão humana, a resposta informa em linguagem comum: situação atual, etapas concluídas, achados, entrada necessária, motivo, impacto, o que ainda pode continuar e a próxima ação. As skills operacionais continuam disponíveis para diagnóstico e execução direta.
+
 ## Verificação local
 
 ```text
@@ -94,7 +108,7 @@ O launcher da validação é Windows/PowerShell. Node não é requisito do runti
 
 ## Dados reais
 
-Nunca faça commit de bases fiscais reais. Para testar, indique explicitamente uma pasta local do cliente. Os artefatos são gravados na própria pasta analisada, em `03_SAIDAS/`, `04_CONTEUDO/`, `05_REVISAO_AQUISICOES/` e `06_REVISAO_RECEITAS/`. O `.gitignore` protege essas pastas e qualquer arquivo `*.local.jsonl` como defesa adicional, mas a política principal continua sendo manter dados de clientes fora do repositório.
+Nunca faça commit de bases fiscais reais. Para testar, indique explicitamente uma pasta local do cliente. Os artefatos são gravados na própria pasta analisada, em `03_SAIDAS/` até `08_STATUS_PLANEJAMENTO/`. O `.gitignore` protege essas pastas e qualquer arquivo `*.local.jsonl` como defesa adicional, mas a política principal continua sendo manter dados de clientes fora do repositório.
 
 ## Atualizações do plugin
 

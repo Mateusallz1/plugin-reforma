@@ -6,13 +6,13 @@
 - Branch: `main`; confirme `git status` e `git log -1` ao retomar, sem depender de hash gravado neste documento.
 - Runtime ativo: Python/`uv`, sem servidor MCP no manifesto.
 - Motor compartilhado em `engine/`, com bootstrap central em `scripts/invoke-engine.ps1`.
-- Skills no fonte: `uv`, `validar-base-documental`, `extrair-conteudo-fiscal`, `revisar-aquisicoes` e `revisar-receitas`.
+- Skills no fonte: `planejar-reforma-tributaria` como porta de entrada, `uv` para manutenção e as skills operacionais de UC-001 a UC-003C.
 - UC-001: NF-e, NFC-e, NFS-e ABRASF e CT-e modelo 57.
 - Esquema de saída UC-001: `1.8.0`, com política de relatório, autorização por escopo e oito grupos operacionais.
 - Homologação real: 130 documentos incluídos, três escopos `READY`, sem bloqueadores.
 - UC-002: extração normalizada de produtos, serviços e transportes somente nos grupos operacionais autorizados.
 - Homologação real do UC-002: 130 documentos selecionados, 204 registros, 25 componentes, 44 NF-e reconciliadas e nenhum bloqueador de extração.
-- Testes: 33 aprovados com as revisões de aquisições e receitas; Ruff, formatação e lock do `uv` aprovados.
+- Testes: 44 aprovados, incluindo o coordenador user-facing; Ruff, formatação e lock do `uv` aprovados.
 
 ## Concluído
 
@@ -43,6 +43,8 @@
 - [x] UC-003B com valor total do documento e classificação das saídas por CFOP.
 - [x] Snapshot CFOP IT 2023.002 v2.00, publicado em 25/08/2026, com 619 códigos e hash do XLSX.
 - [x] Devoluções e remessas orientadas pelos indicadores oficiais, com checklist do analista separado.
+- [x] UC-003C com parser do PGDAS-D, conciliação por estabelecimento e atividade e cobertura parcial sem presunção de não emissão.
+- [x] Coordenador `planejar-reforma-tributaria` com retomada por estado, execução automática segura e solicitações em linguagem comum.
 
 A homologação real da política `COMPLEMENTARY` preservou 130 documentos incluídos e `planning_authorized=true`; sem relatório disponível, `reconciliation_ready=false` e 130 ocorrências `XML_WITHOUT_REPORT` permaneceram como avisos. O UC-002 consumiu o schema 1.8.0 sem regressão e manteve 204 registros elegíveis para o UC-003.
 
@@ -105,6 +107,20 @@ Ainda falta homologar a fila real e implementar as regras materiais que avaliar�
 O piloto combina total documental do UC-001 com CFOPs dos itens do UC-002. Notas mistas ou diferenças entre `vNF` e `vProd` ficam pendentes, sem rateio automático.
 
 Na base real, 29 NF-e de venda somaram R$ 51.345,00 e 79 NFS-e prestadas somaram R$ 66.160,00. A receita operacional documental candidata foi R$ 117.505,00, sem devoluções, remessas, pendências ou componentes não alocados. A população de receita ficou pronta, mas o UC-004 permanece não autorizado.
+
+### 8. UC-003C — conciliação do faturamento no Simples Nacional
+
+O piloto usa a declaração oficial PGDAS-D como autoridade, gera lock por hash e compara a receita do UC-003B por competência, estabelecimento e atividade. Recibo, extrato, DAS e memória do sistema contábil são fontes complementares com papéis distintos.
+
+Na homologação real, comércio e serviços do estabelecimento documental coincidiram integralmente com o PGDAS-D. A declaração também continha outro estabelecimento fora da base fornecida; o resultado correto foi `SIMPLE_REVENUE_PARTIAL_COVERAGE`, com `documentary_scope_reconciled=true`, `group_coverage_complete=false` e `non_issuance_confirmed=false`.
+
+Ainda falta receber e validar a base documental do estabelecimento não coberto. Diferenças por dedução, caixa, competência ou declaração retificadora permanecem na fila do analista e não comprovam não emissão.
+
+### 9. Coordenação orientada ao usuário
+
+O comando `planning-status` lê os artefatos existentes sem refazer etapas concluídas, grava um resumo em `08_STATUS_PLANEJAMENTO/` e informa ações automáticas e entradas humanas por escopo de impacto.
+
+A skill `planejar-reforma-tributaria` usa esse estado como porta de entrada. Ela executa cada ação automática no máximo uma vez por rodada, reavalia o status e interrompe somente diante de entrada indispensável, falha operacional ou funcionalidade ainda não implementada. A resposta padrão evita códigos e gates técnicos e apresenta situação, concluído, achados, necessidade, motivo, continuidade e próximo passo.
 
 ## Backlog condicional
 
