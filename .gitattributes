@@ -11,6 +11,7 @@ legacy/mcp/server.mjs -text
 *.yaml text eol=lf
 *.toml text eol=lf
 *.csv text eol=lf
+*.sha256 -text
 
 # The archived MCP is forensic evidence. Preserve every file byte-for-byte,
 # overriding the general text and line-ending rules above.

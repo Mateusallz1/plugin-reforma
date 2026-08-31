@@ -20,6 +20,8 @@ from test_uc001 import (
     nfse_xml,
 )
 
+PLUGIN_ROOT = Path(__file__).parents[2]
+
 
 def make_authorized_content_case(tmp_path: Path) -> tuple[Path, str, str]:
     folder = make_folder(
@@ -238,7 +240,8 @@ def test_uc002_launcher_prepares_production_runtime_then_runs_without_uv(
     folder, _, _ = make_authorized_content_case(tmp_path)
     runtime = tmp_path / "runtime"
     launcher = (
-        Path(__file__).parents[4]
+        PLUGIN_ROOT
+        / "skills"
         / "extrair-conteudo-fiscal"
         / "scripts"
         / "run-content-extractor.ps1"

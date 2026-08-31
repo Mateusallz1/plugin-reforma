@@ -28,7 +28,8 @@ A conversa anterior e a memória da outra máquina não são necessárias: o con
 - `skills/extrair-conteudo-fiscal/`: coordenador do UC-002; consome apenas documentos autorizados pelo UC-001.
 - `skills/revisar-aquisicoes/`: coordenador do UC-003; separa compras e gera fila para decisão do analista.
 - `skills/revisar-receitas/`: segunda frente do UC-003; separa vendas, devoluções, remessas e operações pendentes.
-- `skills/validar-base-documental/scripts/motor-planejamento/`: motor Python determinístico gerenciado por `uv`.
+- `engine/`: motor Python determinístico compartilhado e gerenciado por `uv`.
+- `scripts/invoke-engine.ps1`: bootstrap único do ambiente e do executável usado pelos launchers das skills.
 - `skills/validar-base-documental/references/`: políticas de validade, CT-e, NFS-e, grupos e autorizações por escopo.
 - `skills/uv/`: orientação vendorizada da Astral para manutenção do motor.
 - `03_SAIDAS/` e demais dados de clientes: ficam fora deste repositório.
@@ -84,16 +85,16 @@ As saídas ficam em `06_REVISAO_RECEITAS/` e separam receita documental bruta, d
 ## Verificação local
 
 ```text
-uv run --project skills/validar-base-documental/scripts/motor-planejamento --group dev pytest skills/validar-base-documental/scripts/motor-planejamento/tests -q
-uv run --project skills/validar-base-documental/scripts/motor-planejamento --group dev ruff check skills/validar-base-documental/scripts/motor-planejamento
-uv lock --project skills/validar-base-documental/scripts/motor-planejamento --check
+uv run --project engine --group dev pytest engine/tests -q
+uv run --project engine --group dev ruff check engine
+uv lock --project engine --check
 ```
 
 O launcher da validação é Windows/PowerShell. Node não é requisito do runtime ativo; só aparece no arquivo legado arquivado.
 
 ## Dados reais
 
-Nunca faça commit de bases fiscais reais. Para testar, indique explicitamente uma pasta local do cliente. Os artefatos são gravados na própria pasta analisada, em `03_SAIDAS/` e `04_CONTEUDO/`.
+Nunca faça commit de bases fiscais reais. Para testar, indique explicitamente uma pasta local do cliente. Os artefatos são gravados na própria pasta analisada, em `03_SAIDAS/`, `04_CONTEUDO/`, `05_REVISAO_AQUISICOES/` e `06_REVISAO_RECEITAS/`. O `.gitignore` protege essas pastas e qualquer arquivo `*.local.jsonl` como defesa adicional, mas a política principal continua sendo manter dados de clientes fora do repositório.
 
 ## Atualizações do plugin
 

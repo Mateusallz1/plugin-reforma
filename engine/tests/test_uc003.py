@@ -23,8 +23,10 @@ from test_uc001 import (
     nfse_xml,
 )
 
+PLUGIN_ROOT = Path(__file__).parents[2]
 RULESET = (
-    Path(__file__).parents[4]
+    PLUGIN_ROOT
+    / "skills"
     / "revisar-aquisicoes"
     / "references"
     / "snapshots"
@@ -209,7 +211,8 @@ def test_uc003_launcher_prepares_runtime_then_runs_without_uv(tmp_path: Path) ->
     folder = make_acquisition_case(tmp_path)
     runtime = tmp_path / "runtime"
     launcher = (
-        Path(__file__).parents[4]
+        PLUGIN_ROOT
+        / "skills"
         / "revisar-aquisicoes"
         / "scripts"
         / "run-acquisition-review.ps1"

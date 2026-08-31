@@ -22,6 +22,7 @@ COMPANY = "12345678000195"
 OTHER = "98765432000198"
 NAMESPACE = "http://www.portalfiscal.inf.br/nfe"
 CTE_NAMESPACE = "http://www.portalfiscal.inf.br/cte"
+PLUGIN_ROOT = Path(__file__).parents[2]
 
 
 def access_key(issuer: str, model: str, number: int) -> str:
@@ -882,7 +883,13 @@ def test_launcher_prepares_production_runtime_then_runs_without_uv(
         encoding="utf-8",
     )
     runtime = tmp_path / "runtime"
-    launcher = Path(__file__).parents[2] / "run-validator.ps1"
+    launcher = (
+        PLUGIN_ROOT
+        / "skills"
+        / "validar-base-documental"
+        / "scripts"
+        / "run-validator.ps1"
+    )
     environment = os.environ.copy()
     environment["FISCAL_INTAKE_ENVIRONMENT"] = str(runtime)
     command = [

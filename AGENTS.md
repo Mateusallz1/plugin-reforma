@@ -4,7 +4,8 @@
 
 - O fluxo ativo começa em `validar-base-documental` (UC-001), segue para `extrair-conteudo-fiscal` (UC-002) e para as frentes `revisar-aquisicoes` e `revisar-receitas` do UC-003, com motor Python compartilhado e gerenciado por `uv`.
 - A validação documental grava `validation-result.json` e `relatorio-prontidao-documental.md` na pasta do cliente.
-- A extração grava o resumo e o relatório em `04_CONTEUDO/`; o arquivo `normalized-items.local.jsonl` contém descrições e deve permanecer local e restrito.
+- As etapas gravam artefatos em `03_SAIDAS/`, `04_CONTEUDO/`, `05_REVISAO_AQUISICOES/` e `06_REVISAO_RECEITAS/`. Arquivos `*.local.jsonl` contêm detalhes comerciais e devem permanecer locais e restritos.
+- O motor compartilhado fica em `engine/`; `scripts/invoke-engine.ps1` é a única autoridade para preparar o ambiente `uv` e executar o CLI.
 - O MCP não faz parte do runtime ativo. O legado está preservado em `legacy/mcp/` apenas para consulta e migração futura.
 - Não executar, editar ou reativar arquivos de `legacy/mcp/` durante uma análise normal.
 
@@ -38,10 +39,10 @@
 Execute os comandos Python por `uv`, nunca por `pip` ou por um ambiente manual:
 
 ```text
-uv run --project skills/validar-base-documental/scripts/motor-planejamento --group dev pytest skills/validar-base-documental/scripts/motor-planejamento/tests -q
-uv run --project skills/validar-base-documental/scripts/motor-planejamento --group dev ruff check skills/validar-base-documental/scripts/motor-planejamento
-uv run --project skills/validar-base-documental/scripts/motor-planejamento --group dev ruff format --check skills/validar-base-documental/scripts/motor-planejamento
-uv lock --project skills/validar-base-documental/scripts/motor-planejamento --check
+uv run --project engine --group dev pytest engine/tests -q
+uv run --project engine --group dev ruff check engine
+uv run --project engine --group dev ruff format --check engine
+uv lock --project engine --check
 ```
 
 Antes de empacotar, valide as skills e o plugin com os validadores oficiais. Depois reinstale pelo marketplace pessoal e abra uma nova tarefa do Codex.

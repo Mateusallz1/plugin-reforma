@@ -19,7 +19,8 @@ from test_uc001 import (
     nfse_xml,
 )
 
-SKILL = Path(__file__).parents[4] / "revisar-receitas"
+PLUGIN_ROOT = Path(__file__).parents[2]
+SKILL = PLUGIN_ROOT / "skills" / "revisar-receitas"
 CFOP_SNAPSHOT = SKILL / "references" / "snapshots" / "cfop-2026-08-25.json"
 ANALYST_RULES = SKILL / "references" / "rules" / "revenue-cfop-rules-v1.json"
 

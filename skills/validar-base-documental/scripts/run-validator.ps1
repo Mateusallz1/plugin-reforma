@@ -7,31 +7,14 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$projectRoot = Join-Path $PSScriptRoot "motor-planejamento"
-$runtimeEnvironment = if ($env:FISCAL_INTAKE_ENVIRONMENT) {
-    $env:FISCAL_INTAKE_ENVIRONMENT
-} else {
-    Join-Path $projectRoot ".venv"
-}
-$env:UV_PROJECT_ENVIRONMENT = $runtimeEnvironment
-$validator = Join-Path $runtimeEnvironment "Scripts\fiscal-document-intake.exe"
+$engineLauncher = [IO.Path]::GetFullPath(
+    (Join-Path $PSScriptRoot "..\..\..\scripts\invoke-engine.ps1")
+)
 
-if (-not (Test-Path -LiteralPath $validator -PathType Leaf)) {
-    Push-Location $projectRoot
-    try {
-        & uv sync --locked --no-dev --no-progress
-        if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-        }
-    } finally {
-        Pop-Location
-    }
-}
-
-$arguments = @("validate", $Folder)
+$arguments = @($Folder)
 if ($OutputDir) {
     $arguments += @("--output-dir", $OutputDir)
 }
 
-& $validator @arguments
+& $engineLauncher -Command "validate" -CommandArguments $arguments
 exit $LASTEXITCODE

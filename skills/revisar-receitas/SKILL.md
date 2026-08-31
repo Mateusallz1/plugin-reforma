@@ -17,7 +17,9 @@ Execute esta fase do UC-003 somente quando o UC-002 indicar `uc003_analysis_auth
 
 1. Execute uma vez `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-revenue-review.ps1 -Folder <pasta>`.
 2. Leia `06_REVISAO_RECEITAS/revenue-summary.json`, `cfop-ruleset-lock.json` e `relatorio-revisao-receitas.md`.
-3. Informe receita documental bruta, devoluções, remessas, pendências, diferenças entre documento e itens e gates.
+3. Para código de saída `0`, informe receita documental bruta, devoluções, remessas, pendências, diferenças entre documento e itens e gates.
+4. Para código `2`, informe por que a revisão não pode alimentar a etapa seguinte e pare.
+5. Para outro código, artefato ausente ou ilegível, diagnostique a falha operacional e consulte [references/uc-003-receitas.md](references/uc-003-receitas.md) somente no ponto necessário.
 
 ## Regras
 

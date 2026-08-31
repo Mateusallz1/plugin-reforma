@@ -17,7 +17,9 @@ Execute o UC-003 somente quando `04_CONTEUDO/content-summary.json` indicar `uc00
 
 1. Execute uma vez `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-acquisition-review.ps1 -Folder <pasta>`.
 2. Leia `05_REVISAO_AQUISICOES/acquisition-summary.json`, `ruleset-lock.json` e `relatorio-revisao-aquisicoes.md`.
-3. Informe categorias, valores documentais, evidência IBS/CBS, pendências e gates. Não reproduza os JSONL ou CSV locais na conversa.
+3. Para código de saída `0`, informe categorias, valores documentais, evidência IBS/CBS, pendências e gates. Não reproduza os JSONL ou CSV locais na conversa.
+4. Para código `2`, informe por que a revisão não pode alimentar a etapa seguinte e pare.
+5. Para outro código, artefato ausente ou ilegível, diagnostique a falha operacional e consulte [references/uc-003.md](references/uc-003.md) somente no ponto necessário.
 
 ## Regras
 

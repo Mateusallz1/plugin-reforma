@@ -5,6 +5,7 @@
 - Plugin em desenvolvimento: `0.28.0`; a instalação ativa permanece em `0.26.0+codex.20260831141112` até o próximo commit e cachebuster.
 - Branch: `main`; confirme `git status` e `git log -1` ao retomar, sem depender de hash gravado neste documento.
 - Runtime ativo: Python/`uv`, sem servidor MCP no manifesto.
+- Motor compartilhado em `engine/`, com bootstrap central em `scripts/invoke-engine.ps1`.
 - Skills no fonte: `uv`, `validar-base-documental`, `extrair-conteudo-fiscal`, `revisar-aquisicoes` e `revisar-receitas`.
 - UC-001: NF-e, NFC-e, NFS-e ABRASF e CT-e modelo 57.
 - Esquema de saída UC-001: `1.8.0`, com política de relatório, autorização por escopo e oito grupos operacionais.
