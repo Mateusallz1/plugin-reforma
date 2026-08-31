@@ -3,8 +3,7 @@
 ## Baseline atual
 
 - Plugin: `0.23.0` com cachebuster local aplicado na instalação.
-- Branch: `main`.
-- Último commit publicado: `2b45532` (`refactor: retire legacy MCP runtime`).
+- Branch: `main`; confirme `git status` e `git log -1` ao retomar, sem depender de hash gravado neste documento.
 - Runtime ativo: Python/`uv`, sem servidor MCP no manifesto.
 - Skills ativas: `uv` e `validar-base-documental`.
 - UC-001: NF-e, NFC-e, NFS-e ABRASF e CT-e modelo 57.
@@ -50,6 +49,8 @@ O motor, os gates, a privacidade e os códigos de saída permaneceram inalterado
 ### 3. Validar a retomada em máquina limpa
 
 Clonar o repositório em outra conta Windows, instalar o plugin local, reiniciar o Desktop e executar uma base sintética. Confirmar que `AGENTS.md`, `README.md` e as referências direcionam o trabalho sem depender da conversa anterior.
+
+Uma simulação local por clone isolado passou nos 14 testes e nos validadores. Ela também identificou normalização indevida de fim de linha no launcher legado; `legacy/mcp/**` passou a ser preservado como bytes opacos. Ainda falta repetir a instalação na máquina de casa.
 
 ### 4. Homologar o modelo de relatório do analista
 
