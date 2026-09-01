@@ -36,8 +36,12 @@ outputs/
 **/06_REVISAO_RECEITAS/
 **/07_CONCILIACAO_SIMPLES/
 **/08_STATUS_PLANEJAMENTO/
+**/.reforma-tributaria/
 **/UC001_*/
 **/*.local.jsonl
+**/*.local.json
+**/*.local.md
+**/*.sqlite3*
 *.log
 
 # Fiscal and client documents are private by default. Force-add only reviewed

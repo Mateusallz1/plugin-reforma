@@ -12,7 +12,7 @@
 - Homologação real: 130 documentos incluídos, três escopos `READY`, sem bloqueadores.
 - UC-002: extração normalizada de produtos, serviços e transportes somente nos grupos operacionais autorizados.
 - Homologação real do UC-002: 130 documentos selecionados, 204 registros, 25 componentes, 44 NF-e reconciliadas e nenhum bloqueador de extração.
-- Testes: 58 aprovados, incluindo o coordenador user-facing, a revisão central da carteira, o lote incremental e seus launchers; Ruff, formatação e lock do `uv` aprovados.
+- Testes: 63 aprovados, incluindo regressões de hash de conteúdo, coerência das saídas, fechamento SQLite e retomada de aprovações preparadas; Ruff, formatação e lock do `uv` aprovados.
 
 ## Concluído
 
@@ -136,7 +136,9 @@ Na homologação real pseudonimizada, 70 ocorrências pendentes foram consolidad
 
 A skill `processar-periodos-carteira` descobre competências com documentos fiscais, preserva o isolamento por estabelecimento e período e executa até dois períodos simultaneamente por padrão. O manifesto e a configuração de identidade ficam somente em `.reforma-tributaria/`, fora do plugin e do Git.
 
-Cada competência tem impressão digital das entradas, declarações e regras. Períodos sem mudança são ignorados; uma falha fica isolada e não interrompe os demais. A fila central é consolidada uma vez após o lote. A homologação também corrigiu a leitura da competência no PGDAS-D e eliminou duplicação de itens quando o mesmo documento possuía representações XML repetidas.
+Cada competência tem hash do conteúdo das entradas, declarações e regras. Períodos só são ignorados quando as saídas também possuem schemas e IDs encadeados coerentes; uma falha fica isolada e não interrompe os demais. A fila central é consolidada uma vez após o lote. A homologação também corrigiu a leitura da competência no PGDAS-D e eliminou duplicação de itens quando o mesmo documento possuía representações XML repetidas.
+
+A revisão posterior endureceu a privacidade de `.reforma-tributaria/`, removeu caminhos absolutos dos resultados públicos, passou a fechar conexões SQLite explicitamente e tornou aprovações recuperáveis por um registro durável `PREPARED` anterior à alteração dos CSVs empresariais.
 
 Na base real, foram descobertas 14 competências fiscais; sete pastas exclusivas do Simples foram corretamente tratadas apenas como fontes de conciliação. Na retomada final, oito períodos foram processados em 85,384 segundos e seis já concluídos foram reaproveitados, sem falhas. A execução seguinte reaproveitou os 14 períodos em 0,310 segundo no motor e 1,622 segundo de ponta a ponta. A fila central resultante contém 240 grupos para revisão humana, sem aprovação automática.
 

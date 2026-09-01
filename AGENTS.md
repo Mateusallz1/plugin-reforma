@@ -25,6 +25,8 @@
 - O UC-003 revisa somente entradas e não infere natureza econômica ou direito a crédito. Decisões exigem `status=APROVADO` no arquivo local do analista; a fila central pode materializar esse arquivo a partir de uma aprovação humana registrada em SQLite local.
 - A fila central usa somente a raiz de carteira indicada pelo usuário. `ITEM`, `COMPANY` e `PORTFOLIO` são alcances distintos; nunca escolha ou amplie `PORTFOLIO` silenciosamente.
 - O lote mantém cada estabelecimento e competência isolados. O manifesto local deve reaproveitar períodos sem mudança, continuar diante de falha parcial e reprocessar somente entradas alteradas ou quando `force` for explicitamente solicitado.
+- A reutilização incremental exige hash de conteúdo e coerência dos schemas e IDs das saídas. Presença de arquivo, tamanho e `mtime` não são evidência suficiente.
+- `.reforma-tributaria/` contém estado privado da carteira e deve permanecer ignorada pelo Git. Resultados públicos retornam somente referências relativas, nunca caminhos empresariais absolutos.
 - Antes de usar a tabela CST/cClassTrib, confira a publicação oficial atual. Divergência de versão exige manutenção explícita do snapshot e nova bateria de testes.
 - A revisão de receitas usa o total do documento, direção e CFOP. CFOP de venda em entrada continua sendo compra; remessa, retorno, anulação e devolução de compra ficam fora da receita operacional.
 - Checklist do analista complementa a tabela CFOP oficial e não é exaustivo. `ind_excluded_ibs_cbs` não equivale sozinho a operação sem receita.

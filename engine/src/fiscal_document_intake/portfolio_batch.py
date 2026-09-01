@@ -11,7 +11,7 @@ from typing import Any
 
 from .acquisition import review_acquisitions_folder, write_acquisition_outputs
 from .content import extract_content_folder, write_content_outputs
-from .core import ValidationError, validate_folder, write_outputs
+from .core import ValidationError, _parse_xml_file, validate_folder, write_outputs
 from .planning_status import evaluate_planning_status, write_planning_status_outputs
 from .portfolio_review import review_portfolio
 from .revenue import review_revenue_folder, write_revenue_outputs
@@ -20,7 +20,7 @@ from .simple_reconciliation import (
     write_simple_reconciliation_outputs,
 )
 
-BATCH_SCHEMA_VERSION = "1.0.0"
+BATCH_SCHEMA_VERSION = "1.1.0"
 STATE_FOLDER = ".reforma-tributaria"
 MANIFEST_FILE = "processamento-lote-manifest.json"
 CONFIG_FILE = "configuracao-lote.local.json"
@@ -138,6 +138,7 @@ def _inventory(folder: Path | None) -> list[dict[str, Any]]:
             "path": path.relative_to(folder).as_posix(),
             "size": path.stat().st_size,
             "modified_ns": path.stat().st_mtime_ns,
+            "sha256": _sha256(path),
         }
         for path in _source_files(folder)
     ]
@@ -160,6 +161,30 @@ def _fingerprint(
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
+def _document_families(xml_files: list[Path]) -> list[str]:
+    families: set[str] = set()
+    for path in xml_files:
+        documents, event, error = _parse_xml_file(path)
+        families.update(
+            document["document_type"]
+            for document in documents
+            if document.get("document_type") in {"NFE", "NFCE", "NFSE", "CTE"}
+        )
+        if event is not None:
+            families.add("NFE")
+        if error is not None:
+            scope = error.get("analysis_scope")
+            if scope == "NFE_NFCE":
+                families.add("NFE")
+            elif scope in {"NFSE", "CTE"}:
+                families.add(scope)
+    if not families:
+        raise ValidationError(
+            "Nenhuma família fiscal reconhecida na competência do lote"
+        )
+    return sorted(families)
+
+
 def _scope_from_identity(
     item: dict[str, Any], identity: dict[str, Any]
 ) -> dict[str, Any]:
@@ -176,7 +201,7 @@ def _scope_from_identity(
         "entity_taxpayer_ids": identity["entity_taxpayer_ids"],
         "period": item["period"],
         "objective": "VALIDATE_DOCUMENT_BASE",
-        "document_families": ["NFE", "NFCE", "NFSE", "CTE"],
+        "document_families": _document_families(xml_files),
         "validation_policy": "DOCUMENTARY_INITIAL",
         "report_population_policy": "COMPLEMENTARY",
         "analysis_cutoff": datetime.fromtimestamp(cutoff)
@@ -231,15 +256,54 @@ def _bootstrap_identity(
     return None, {}
 
 
-def _outputs_present(folder: Path) -> bool:
-    required = [
-        folder / "03_SAIDAS" / "validation-result.json",
-        folder / "04_CONTEUDO" / "content-summary.json",
-        folder / "05_REVISAO_AQUISICOES" / "acquisition-summary.json",
-        folder / "06_REVISAO_RECEITAS" / "revenue-summary.json",
-        folder / "08_STATUS_PLANEJAMENTO" / "planning-status.json",
-    ]
-    return all(path.is_file() for path in required)
+def _outputs_coherent(folder: Path) -> bool:
+    try:
+        validation = _load_json(folder / "03_SAIDAS" / "validation-result.json")
+        content = _load_json(folder / "04_CONTEUDO" / "content-summary.json")
+        acquisition = _load_json(
+            folder / "05_REVISAO_AQUISICOES" / "acquisition-summary.json"
+        )
+        revenue = _load_json(folder / "06_REVISAO_RECEITAS" / "revenue-summary.json")
+        planning = _load_json(
+            folder / "08_STATUS_PLANEJAMENTO" / "planning-status.json"
+        )
+    except ValidationError:
+        return False
+    if not all((validation, content, acquisition, revenue, planning)):
+        return False
+    if validation.get("use_case") != "UC-001" or not validation.get("validation_id"):
+        return False
+    if (
+        content.get("use_case") != "UC-002"
+        or content.get("validation_id") != validation.get("validation_id")
+        or not content.get("content_analysis_id")
+    ):
+        return False
+    if (
+        acquisition.get("use_case") != "UC-003"
+        or acquisition.get("phase") != "ACQUISITION_REVIEW"
+        or acquisition.get("content_analysis_id") != content.get("content_analysis_id")
+        or not acquisition.get("review_id")
+    ):
+        return False
+    if (
+        revenue.get("use_case") != "UC-003"
+        or revenue.get("phase") != "REVENUE_REVIEW"
+        or revenue.get("validation_id") != validation.get("validation_id")
+        or revenue.get("content_analysis_id") != content.get("content_analysis_id")
+        or not revenue.get("review_id")
+    ):
+        return False
+    return (
+        planning.get("use_case") == "PLANNING_COORDINATION"
+        and bool(planning.get("state_id"))
+        and {
+            "DOCUMENT_VALIDATION",
+            "CONTENT_EXTRACTION",
+            "ACQUISITION_REVIEW",
+            "REVENUE_REVIEW",
+        }.issubset(set(planning.get("completed_stages", [])))
+    )
 
 
 def _process_period(
@@ -403,7 +467,7 @@ def process_portfolio_periods(
             not force
             and identity is not None
             and previous.get("fingerprint") == fingerprint
-            and _outputs_present(item["folder"])
+            and _outputs_coherent(item["folder"])
         )
         if unchanged:
             skipped_results.append(
@@ -517,7 +581,7 @@ def process_portfolio_periods(
         "elapsed_seconds": round(time.perf_counter() - started, 3),
         "portfolio_review_groups": portfolio["group_count"],
         "periods": public_periods,
-        "local_report": str(report_path),
+        "local_report": f"{STATE_FOLDER}/{REPORT_FILE}",
     }
     _write_json(status_path, result)
     _local_report(result, report_path)

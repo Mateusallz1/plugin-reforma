@@ -7,6 +7,8 @@ import json
 import re
 import sqlite3
 from collections import Counter
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -74,6 +76,7 @@ def _connect(database: Path) -> sqlite3.Connection:
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     connection.execute("PRAGMA journal_mode = WAL")
+    connection.execute("PRAGMA busy_timeout = 5000")
     connection.executescript(
         """
         CREATE TABLE IF NOT EXISTS occurrences (
@@ -130,6 +133,16 @@ def _connect(database: Path) -> sqlite3.Connection:
         """
     )
     return connection
+
+
+@contextmanager
+def _connection(database: Path) -> Iterator[sqlite3.Connection]:
+    connection = _connect(database)
+    try:
+        with connection:
+            yield connection
+    finally:
+        connection.close()
 
 
 def _load_json(path: Path, label: str) -> dict[str, Any]:
@@ -266,7 +279,7 @@ def _apply_saved_rules(
     rows: list[dict[str, Any]],
     ruleset_path: Path | str | None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    with _connect(database) as connection:
+    with _connection(database) as connection:
         rules = [
             dict(row)
             for row in connection.execute(
@@ -286,6 +299,13 @@ def _apply_saved_rules(
             "reprocess_errors": [],
         }
 
+    ruleset: Path | None = None
+    if ruleset_path is not None:
+        ruleset = Path(ruleset_path).expanduser().resolve()
+        if not ruleset.is_file():
+            raise ValidationError("O snapshot oficial informado não existe")
+    _validate_selected_paths(database.parent.parent, [row for row, _ in assignments])
+
     by_rule: dict[str, list[dict[str, Any]]] = {}
     rule_index: dict[str, dict[str, Any]] = {}
     for row, rule in assignments:
@@ -302,10 +322,7 @@ def _apply_saved_rules(
 
     reprocessed: list[str] = []
     reprocess_errors: list[str] = []
-    if ruleset_path is not None:
-        ruleset = Path(ruleset_path).expanduser().resolve()
-        if not ruleset.is_file():
-            raise ValidationError("O snapshot oficial informado não existe")
+    if ruleset is not None:
         companies = {
             row["company_ref"]: Path(row["company_path"]) for row, _ in assignments
         }
@@ -320,7 +337,7 @@ def _apply_saved_rules(
                 reprocess_errors.append(company_ref)
 
     applied_at = _utc_now()
-    with _connect(database) as connection:
+    with _connection(database) as connection:
         for row, rule in assignments:
             connection.execute(
                 """
@@ -362,7 +379,7 @@ def _index_portfolio(
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     occurrences = _find_pending_occurrences(root)
     indexed_at = _utc_now()
-    with _connect(database) as connection:
+    with _connection(database) as connection:
         connection.execute("UPDATE occurrences SET active = 0")
         for item in occurrences:
             connection.execute(
@@ -526,7 +543,7 @@ def review_portfolio(
         "page_size": page_size,
         "has_more": start + page_size < len(groups),
         "groups": [_public_group(group) for group in selected],
-        "local_report": str(report_path),
+        "local_report": f"{PORTFOLIO_FOLDER}/{LOCAL_REPORT_FILE}",
         **automatic,
     }
     _write_local_report(groups, report_path)
@@ -664,6 +681,23 @@ def _request_id(material: dict[str, str]) -> str:
     return _hash_ref("APR", value, 24)
 
 
+def _request_fingerprint(material: dict[str, str]) -> str:
+    value = json.dumps(
+        material, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _validate_selected_paths(root: Path, selected: list[dict[str, Any]]) -> None:
+    for row in selected:
+        try:
+            Path(row["company_path"]).expanduser().resolve().relative_to(root)
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValidationError(
+                "Uma ocorrência preparada aponta para fora da carteira autorizada"
+            ) from error
+
+
 def approve_portfolio_group(
     portfolio_root: Path | str,
     *,
@@ -693,64 +727,110 @@ def approve_portfolio_group(
         "approved_by": approved_by,
         "company_ref": _normalized(company_ref),
         "occurrence_ref": _normalized(occurrence_ref),
+        "note": note,
     }
     request_id = _normalized(request_id) or _request_id(request_material)
+    request_fingerprint = _request_fingerprint(request_material)
     root, database, _, _ = _portfolio_paths(portfolio_root)
-    with _connect(database) as connection:
+    selected: list[dict[str, Any]] | None = None
+    selector: str | None = None
+    with _connection(database) as connection:
         previous = connection.execute(
             "SELECT result_json FROM approval_batches WHERE request_id = ?",
             (request_id,),
         ).fetchone()
         if previous is not None:
-            return json.loads(previous["result_json"])
+            previous_result = json.loads(previous["result_json"])
+            previous_fingerprint = previous_result.get("request_fingerprint")
+            if previous_fingerprint and previous_fingerprint != request_fingerprint:
+                raise ValidationError(
+                    "O request_id informado já pertence a outra aprovação"
+                )
+            if previous_result.get("status") != "PREPARED":
+                return previous_result
+            if previous_result.get("request_material") != request_material:
+                raise ValidationError(
+                    "A aprovação preparada diverge dos parâmetros informados"
+                )
+            prepared_rows = previous_result.get("_private_selected")
+            if not isinstance(prepared_rows, list) or not prepared_rows:
+                raise ValidationError("A aprovação preparada está incompleta")
+            selected = [dict(row) for row in prepared_rows]
+            selector = str(previous_result.get("selector") or "")
 
     if ruleset_path is not None:
         ruleset = Path(ruleset_path).expanduser().resolve()
         if not ruleset.is_file():
             raise ValidationError("O snapshot oficial informado não existe")
-    rows, _ = _index_portfolio(root, database, ruleset_path)
-    selected = [row for row in rows if row["group_id"] == group_id]
-    if not selected:
-        raise ValidationError("O grupo informado não está pendente nesta carteira")
-    kind = selected[0]["record_kind"]
-    if nature not in ALLOWED_NATURES.get(kind, set()):
-        raise ValidationError("A natureza informada é incompatível com o tipo do grupo")
-    if scope == "COMPANY":
-        if not company_ref:
-            raise ValidationError("O alcance COMPANY exige company_ref")
-        selected = [
-            row for row in selected if row["company_ref"] == _normalized(company_ref)
-        ]
-    elif scope == "ITEM":
-        if not occurrence_ref:
-            raise ValidationError("O alcance ITEM exige occurrence_ref")
-        selected = [
-            row
-            for row in selected
-            if row["occurrence_ref"] == _normalized(occurrence_ref)
-        ]
-    if not selected:
-        raise ValidationError(
-            "O alcance informado não selecionou ocorrências pendentes"
+    if selected is None:
+        rows, _ = _index_portfolio(root, database, ruleset_path)
+        selected = [row for row in rows if row["group_id"] == group_id]
+        if not selected:
+            raise ValidationError("O grupo informado não está pendente nesta carteira")
+        kind = selected[0]["record_kind"]
+        if nature not in ALLOWED_NATURES.get(kind, set()):
+            raise ValidationError(
+                "A natureza informada é incompatível com o tipo do grupo"
+            )
+        if scope == "COMPANY":
+            if not company_ref:
+                raise ValidationError("O alcance COMPANY exige company_ref")
+            selected = [
+                row
+                for row in selected
+                if row["company_ref"] == _normalized(company_ref)
+            ]
+        elif scope == "ITEM":
+            if not occurrence_ref:
+                raise ValidationError("O alcance ITEM exige occurrence_ref")
+            selected = [
+                row
+                for row in selected
+                if row["occurrence_ref"] == _normalized(occurrence_ref)
+            ]
+        if not selected:
+            raise ValidationError(
+                "O alcance informado não selecionou ocorrências pendentes"
+            )
+        selector = (
+            selected[0]["occurrence_ref"]
+            if scope == "ITEM"
+            else selected[0]["company_ref"]
+            if scope == "COMPANY"
+            else ""
         )
+        prepared = {
+            "status": "PREPARED",
+            "request_id": request_id,
+            "request_fingerprint": request_fingerprint,
+            "request_material": request_material,
+            "selector": selector,
+            "_private_selected": selected,
+        }
+        with _connection(database) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            conflicting_rule = connection.execute(
+                """
+                SELECT nature FROM decision_rules
+                WHERE group_id = ? AND scope = ? AND selector = ? AND active = 1
+                """,
+                (group_id, scope, selector),
+            ).fetchone()
+            if conflicting_rule is not None and conflicting_rule["nature"] != nature:
+                raise ValidationError(
+                    "Existe regra ativa conflitante para o mesmo alcance"
+                )
+            connection.execute(
+                "INSERT INTO approval_batches (request_id, result_json, created_at) VALUES (?, ?, ?)",
+                (
+                    request_id,
+                    json.dumps(prepared, ensure_ascii=False, sort_keys=True),
+                    _utc_now(),
+                ),
+            )
 
-    selector = (
-        selected[0]["occurrence_ref"]
-        if scope == "ITEM"
-        else selected[0]["company_ref"]
-        if scope == "COMPANY"
-        else ""
-    )
-    with _connect(database) as connection:
-        conflicting_rule = connection.execute(
-            """
-            SELECT nature FROM decision_rules
-            WHERE group_id = ? AND scope = ? AND selector = ? AND active = 1
-            """,
-            (group_id, scope, selector),
-        ).fetchone()
-        if conflicting_rule is not None and conflicting_rule["nature"] != nature:
-            raise ValidationError("Existe regra ativa conflitante para o mesmo alcance")
+    assert selected is not None and selector is not None
+    _validate_selected_paths(root, selected)
 
     _write_decision_files(selected, nature=nature, approved_by=approved_by, note=note)
     approved_at = _utc_now()
@@ -783,9 +863,10 @@ def approve_portfolio_group(
         "reprocess_errors": reprocess_errors,
         "approved_by": approved_by,
         "approved_at": approved_at,
+        "request_fingerprint": request_fingerprint,
     }
     serialized = json.dumps(result, ensure_ascii=False, sort_keys=True)
-    with _connect(database) as connection:
+    with _connection(database) as connection:
         for row in selected:
             connection.execute(
                 """
@@ -812,8 +893,8 @@ def approve_portfolio_group(
                 (row["occurrence_ref"],),
             )
         connection.execute(
-            "INSERT INTO approval_batches (request_id, result_json, created_at) VALUES (?, ?, ?)",
-            (request_id, serialized, approved_at),
+            "UPDATE approval_batches SET result_json = ?, created_at = ? WHERE request_id = ?",
+            (serialized, approved_at, request_id),
         )
         connection.execute(
             """
@@ -881,5 +962,5 @@ def export_portfolio_review(portfolio_root: Path | str) -> dict[str, Any]:
     return {
         "status": "EXPORTED",
         "group_count": len(groups),
-        "output": str(export_path),
+        "output": f"{PORTFOLIO_FOLDER}/{EXPORT_FILE}",
     }

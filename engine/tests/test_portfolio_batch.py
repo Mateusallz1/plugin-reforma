@@ -94,10 +94,22 @@ def test_batch_discovers_and_processes_multiple_periods_incrementally(
     assert initial["processed"] == 2
     assert initial["skipped"] == 0
     assert initial["failed"] == 0
+    assert initial["local_report"] == (
+        ".reforma-tributaria/relatorio-processamento-lote.md"
+    )
+    assert str(root) not in json.dumps(initial)
     assert repeated["processed"] == 0
     assert repeated["skipped"] == 2
     assert (first / "08_STATUS_PLANEJAMENTO" / "planning-status.json").is_file()
     assert (root / ".reforma-tributaria" / "processamento-lote-manifest.json").is_file()
+    validation = json.loads(
+        (first / "03_SAIDAS" / "validation-result.json").read_text(encoding="utf-8")
+    )
+    assert validation["gates"]["restricted_scopes"] == []
+    assert (
+        validation["documents"]["analysis_groups"]["NFSE_PRESTADOS"]["movement_status"]
+        == "SEM_MOVIMENTACAO"
+    )
 
 
 def test_batch_reprocesses_only_changed_period(tmp_path: Path) -> None:
@@ -114,6 +126,40 @@ def test_batch_reprocesses_only_changed_period(tmp_path: Path) -> None:
     assert result["processed"] == 1
     assert result["skipped"] == 1
     assert result["failed"] == 0
+
+
+def test_batch_hashes_content_even_when_size_and_mtime_are_unchanged(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "portfolio"
+    period = make_period(root, "MATRIZ", 3, 399)
+    run_batch(root, workers=1)
+    xml = period / "01_XML" / "sale.xml"
+    previous = xml.stat()
+    changed = xml.read_bytes().replace(b"100.00", b"200.00")
+    assert len(changed) == previous.st_size
+    xml.write_bytes(changed)
+    os.utime(xml, ns=(previous.st_atime_ns, previous.st_mtime_ns))
+
+    result = run_batch(root, workers=1)
+
+    assert result["processed"] == 1
+    assert result["skipped"] == 0
+
+
+def test_batch_reprocesses_when_existing_outputs_are_incoherent(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "portfolio"
+    period = make_period(root, "MATRIZ", 3, 398)
+    run_batch(root, workers=1)
+    status = period / "08_STATUS_PLANEJAMENTO" / "planning-status.json"
+    status.write_text("{}", encoding="utf-8")
+
+    result = run_batch(root, workers=1)
+
+    assert result["processed"] == 1
+    assert result["skipped"] == 0
 
 
 def test_batch_isolates_period_failure(tmp_path: Path) -> None:

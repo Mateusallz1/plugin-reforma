@@ -6,6 +6,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import fiscal_document_intake.portfolio_review as portfolio_review_module
 import pytest
 from fiscal_document_intake.acquisition import (
     review_acquisitions_folder,
@@ -47,10 +48,10 @@ def test_portfolio_groups_repeated_cases_without_exposing_local_details(
     assert result["company_count"] == 2
     assert all(group["occurrence_count"] == 2 for group in result["groups"])
     assert all(group["company_count"] == 2 for group in result["groups"])
-    public_text = str(result)
+    public_text = json.dumps(result)
     assert "ITEM SINTETICO" not in public_text
     assert str(root) not in public_text
-    local_report = Path(result["local_report"])
+    local_report = root / result["local_report"]
     assert "ITEM SINTETICO" in local_report.read_text(encoding="utf-8")
     assert (root / ".reforma-tributaria" / "revisoes-carteira.sqlite3").is_file()
 
@@ -163,6 +164,34 @@ def test_portfolio_reuses_approved_rule_for_new_compatible_occurrence(
     assert "MERCADORIA_REVENDA;APROVADO;ANALISTA-TESTE" in decision
 
 
+def test_saved_rules_validate_ruleset_before_writing_new_decisions(
+    tmp_path: Path,
+) -> None:
+    root, _ = make_portfolio(tmp_path)
+    initial = review_portfolio(root)
+    product = next(
+        group for group in initial["groups"] if group["record_kind"] == "PRODUCT"
+    )
+    approve_portfolio_group(
+        root,
+        group_id=product["group_id"],
+        nature="MERCADORIA_REVENDA",
+        scope="PORTFOLIO",
+        approved_by="ANALISTA-TESTE",
+    )
+    parent = root / "company-c"
+    parent.mkdir()
+    company = make_acquisition_case(parent)
+    result = review_acquisitions_folder(company, RULESET)
+    write_acquisition_outputs(result, company / "05_REVISAO_AQUISICOES")
+    decision_path = company / "00_CONTROLE" / "classificacao-aquisicoes.csv"
+
+    with pytest.raises(ValidationError, match="snapshot oficial"):
+        review_portfolio(root, ruleset_path=root / "missing-ruleset.json")
+
+    assert not decision_path.exists()
+
+
 def test_portfolio_rejects_incompatible_nature_and_supports_optional_export(
     tmp_path: Path,
 ) -> None:
@@ -184,7 +213,66 @@ def test_portfolio_rejects_incompatible_nature_and_supports_optional_export(
     exported = export_portfolio_review(root)
     assert exported["status"] == "EXPORTED"
     assert exported["group_count"] == 3
-    assert Path(exported["output"]).is_file()
+    assert (root / exported["output"]).is_file()
+
+
+def test_portfolio_closes_sqlite_connections(tmp_path: Path) -> None:
+    root, _ = make_portfolio(tmp_path)
+    review_portfolio(root)
+    database = root / ".reforma-tributaria" / "revisoes-carteira.sqlite3"
+
+    database.unlink()
+
+    assert not database.exists()
+
+
+def test_portfolio_prepares_approval_before_touching_decision_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = make_portfolio(tmp_path)
+    initial = review_portfolio(root)
+    product = next(
+        group for group in initial["groups"] if group["record_kind"] == "PRODUCT"
+    )
+    original_writer = portfolio_review_module._write_decision_files
+
+    def fail_write(*args: object, **kwargs: object) -> list[Path]:
+        raise OSError("synthetic write failure")
+
+    monkeypatch.setattr(portfolio_review_module, "_write_decision_files", fail_write)
+    with pytest.raises(OSError, match="synthetic write failure"):
+        approve_portfolio_group(
+            root,
+            group_id=product["group_id"],
+            nature="MERCADORIA_REVENDA",
+            scope="PORTFOLIO",
+            approved_by="ANALISTA-TESTE",
+            note="Decisão recuperável",
+            ruleset_path=RULESET,
+        )
+
+    database = root / ".reforma-tributaria" / "revisoes-carteira.sqlite3"
+    with portfolio_review_module._connection(database) as connection:
+        prepared = connection.execute(
+            "SELECT result_json FROM approval_batches"
+        ).fetchone()
+    assert prepared is not None
+    assert json.loads(prepared["result_json"])["status"] == "PREPARED"
+
+    monkeypatch.setattr(
+        portfolio_review_module, "_write_decision_files", original_writer
+    )
+    approved = approve_portfolio_group(
+        root,
+        group_id=product["group_id"],
+        nature="MERCADORIA_REVENDA",
+        scope="PORTFOLIO",
+        approved_by="ANALISTA-TESTE",
+        note="Decisão recuperável",
+        ruleset_path=RULESET,
+    )
+
+    assert approved["status"] == "APPROVED"
 
 
 @pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="Windows launcher")

@@ -12,7 +12,7 @@ Uma carteira pode conter vários estabelecimentos e competências. Executar manu
 
 O usuário informa uma raiz explícita. O lote descobre somente pastas com XML fiscal e trata as pastas de PGDAS-D como fontes declarativas da respectiva competência, não como períodos independentes.
 
-A competência continua sendo a unidade das regras e dos artefatos. O lote é apenas a unidade de execução: usa concorrência limitada, identidade mantida localmente, isolamento de falhas e um manifesto com impressão digital das entradas e dos rulesets. Uma competência sem mudança é reaproveitada; uma competência alterada ou explicitamente forçada é reprocessada.
+A competência continua sendo a unidade das regras e dos artefatos. O lote é apenas a unidade de execução: usa concorrência limitada, identidade mantida localmente, isolamento de falhas e um manifesto com hash do conteúdo das entradas e dos rulesets. Uma competência só é reaproveitada quando as entradas não mudaram e os artefatos existentes possuem schemas e IDs encadeados coerentes; conteúdo alterado, saída inválida ou `force` explícito exige reprocessamento.
 
 Ao terminar, a fila central de aquisições é consolidada uma única vez para toda a raiz indicada. Nenhuma classificação é aprovada automaticamente.
 

@@ -106,7 +106,7 @@ Quando depender de uma decisão humana, a resposta informa em linguagem comum: s
 
 Use `processar-periodos-carteira` quando a pasta indicada contiver várias competências. O lote descobre as pastas com documentos fiscais, mantém estabelecimento e competência separados e processa até dois períodos simultaneamente por padrão.
 
-O estado fica localmente em `.reforma-tributaria/`. Um manifesto registra as entradas e regras usadas em cada competência: períodos sem mudança são reaproveitados, somente períodos alterados são reprocessados e uma falha não interrompe os demais. Pastas que contêm apenas declarações do Simples são fontes de conciliação, não competências fiscais independentes. Ao final, a fila central de revisão é atualizada uma única vez.
+O estado fica localmente em `.reforma-tributaria/`, protegido pelo `.gitignore`. Um manifesto registra hashes das entradas e regras usadas em cada competência: períodos só são reaproveitados quando o conteúdo não mudou e os artefatos possuem schemas e IDs coerentes. Conteúdo alterado, saída corrompida ou `force` explícito provoca reprocessamento; uma falha continua isolada dos demais períodos. Pastas que contêm apenas declarações do Simples são fontes de conciliação, não competências fiscais independentes. Ao final, a fila central de revisão é atualizada uma única vez.
 
 ## Verificação local
 
