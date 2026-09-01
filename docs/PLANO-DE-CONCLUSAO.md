@@ -12,7 +12,7 @@
 - Homologação real: 130 documentos incluídos, três escopos `READY`, sem bloqueadores.
 - UC-002: extração normalizada de produtos, serviços e transportes somente nos grupos operacionais autorizados.
 - Homologação real do UC-002: 130 documentos selecionados, 204 registros, 25 componentes, 44 NF-e reconciliadas e nenhum bloqueador de extração.
-- Testes: 67 aprovados, incluindo ausência de movimento, migração de schemas, regressões de hash de conteúdo, coerência das saídas, fechamento SQLite e retomada de aprovações preparadas; Ruff, formatação e lock do `uv` aprovados.
+- Testes: 79 aprovados, incluindo ausência de movimento, migração de schemas, composição completa do `vNF`, regressões de hash de conteúdo, coerência das saídas, fechamento SQLite e retomada de aprovações preparadas; Ruff, formatação e lock do `uv` aprovados.
 
 ## Concluído
 
@@ -39,6 +39,7 @@
 - [x] UC-003 inicial com separação de mercadorias, serviços e transportes adquiridos.
 - [x] Snapshot oficial IT 2025.002 v1.60 com 18 CSTs, 164 pares cClassTrib e hash do XLSX de origem.
 - [x] Fila local de classificação e aprovação explícita do analista.
+- [x] Contrato de aquisições versionado e rejeição de saídas antigas pelo coordenador e pelo lote incremental.
 - [x] Validação de par declarado por vigência e aplicabilidade ao tipo de DF-e, sem concluir crédito.
 - [x] UC-003B com valor total do documento e classificação das saídas por CFOP.
 - [x] Snapshot CFOP IT 2023.002 v2.00, publicado em 25/08/2026, com 619 códigos e hash do XLSX.
@@ -48,7 +49,7 @@
 - [x] Fila conversacional da carteira com agrupamento, SQLite local, alcance explícito, reaplicação e exportação opcional.
 - [x] Processamento incremental de várias competências, com paralelismo limitado, isolamento de falhas e retomada por manifesto local.
 
-A homologação real da política `COMPLEMENTARY` preservou 130 documentos incluídos e `planning_authorized=true`; sem relatório disponível, `reconciliation_ready=false` e 130 ocorrências `XML_WITHOUT_REPORT` permaneceram como avisos. O UC-002 consumiu o schema 1.1.0 sem regressão e manteve 204 registros elegíveis para o UC-003.
+A homologação real da política `COMPLEMENTARY` preservou 130 documentos incluídos e `planning_authorized=true`; sem relatório disponível, `reconciliation_ready=false` e 130 ocorrências `XML_WITHOUT_REPORT` permaneceram como avisos. O UC-002 consumiu o schema 1.2.0 sem regressão e manteve 204 registros elegíveis para o UC-003.
 
 ## Ajustes desta fase
 
@@ -106,7 +107,7 @@ Ainda falta homologar a fila real e implementar as regras materiais que avaliar�
 
 ### 7. UC-003B — revisão inicial das receitas
 
-O piloto combina total documental do UC-001 com CFOPs dos itens do UC-002. Notas mistas ou diferenças entre `vNF` e `vProd` ficam pendentes, sem rateio automático.
+O piloto combina total documental do UC-001 com CFOPs dos itens do UC-002. A composição de `vNF` usa os totais declarados do documento e confere `vProd`/`indTot` dos itens. Notas mistas ou resíduos não explicados ficam pendentes, sem rateio automático.
 
 Na base real, 29 NF-e de venda somaram R$ 51.345,00 e 79 NFS-e prestadas somaram R$ 66.160,00. A receita operacional documental candidata foi R$ 117.505,00, sem devoluções, remessas, pendências ou componentes não alocados. A população de receita ficou pronta, mas o UC-004 permanece não autorizado.
 

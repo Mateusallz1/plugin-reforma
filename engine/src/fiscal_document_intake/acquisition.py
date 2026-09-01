@@ -15,7 +15,7 @@ from typing import Any
 from .core import ValidationError, _format_decimal, _parse_decimal
 
 ACQUISITION_SCHEMA = "br.com.planejamento-reforma-tributaria/acquisition-review"
-ACQUISITION_SCHEMA_VERSION = "1.0.0"
+ACQUISITION_SCHEMA_VERSION = "1.1.0"
 DECISION_FILE = Path("00_CONTROLE") / "classificacao-aquisicoes.csv"
 ACQUISITION_CATEGORIES = {
     "PRODUCT": "PURCHASE_GOODS",

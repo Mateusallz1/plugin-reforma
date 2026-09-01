@@ -25,6 +25,6 @@ Ausência de documento é fato documental. Ausência de movimento é conclusão 
 - Competência sem nota fiscal é conciliada em vez de ignorada; na homologação, as conciliações produzidas passaram de 10 para 12 em 14 competências, revelando R$ 23.019,20 declarados sem suporte documental que antes não eram reportados.
 - As duas competências que permanecem bloqueadas o são por `document_item_totals_explained=false`, um defeito independente.
 - `non_issuance_confirmed` e `uc004_planning_authorized` continuam falsos; nenhum estado desta decisão comprova não emissão.
-- O contrato público do UC-001 vai a `1.9.0`, o do UC-003B a `1.1.0`, o do UC-003C a `1.1.0` e o do status a `1.1.0`.
+- O contrato público do UC-001 vai a `1.9.0`, o do UC-003 a `1.1.0`, o do UC-003B a `1.1.0`, o do UC-003C a `1.1.0` e o do status a `1.2.0`.
 - `BATCH_SCHEMA_VERSION` vai a `1.2.0` para invalidar competências processadas com o vocabulário anterior.
 - Artefatos gerados antes desta versão usam os nomes antigos e precisam ser reprocessados.

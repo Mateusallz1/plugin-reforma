@@ -1,6 +1,6 @@
 {
   "name": "analise-empresarial-reforma-tributaria",
-  "version": "0.28.0+codex.20260901172146",
+  "version": "0.28.0+codex.20260901184526",
   "description": "Valida documentos, extrai conte\u00fados, revisa aquisi\u00e7\u00f5es e receitas e concilia o PGDAS-D para o planejamento rastre\u00e1vel da Reforma Tribut\u00e1ria.",
   "author": {
     "name": "Desenvolvedor local"

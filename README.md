@@ -88,7 +88,7 @@ As saídas ficam em `05_REVISAO_AQUISICOES/`. O UC-003 inicial não determina di
 
 O UC-003B usa o total do documento do UC-001 e os CFOPs dos itens do UC-002. O snapshot oficial CFOP identifica devoluções, retornos, anulações e remessas; o ruleset do analista reconhece CFOPs usuais de venda sem tratá-los como lista exaustiva.
 
-As saídas ficam em `06_REVISAO_RECEITAS/` e separam receita documental bruta, devoluções de venda, operações fora da receita, tratamento pendente e diferenças entre `vNF` e soma de `vProd`. `net_documentary_revenue_candidate` não representa receita tributável concluída.
+As saídas ficam em `06_REVISAO_RECEITAS/` e separam receita documental bruta, devoluções de venda, operações fora da receita, tratamento pendente e diferenças entre `vNF` e a composição declarada do documento. `net_documentary_revenue_candidate` não representa receita tributável concluída.
 
 ## Conciliação do Simples Nacional
 

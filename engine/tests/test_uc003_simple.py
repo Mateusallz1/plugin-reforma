@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from fiscal_document_intake.cli import main
 from fiscal_document_intake.core import ValidationError
+from fiscal_document_intake.revenue import REVENUE_SCHEMA_VERSION
 from fiscal_document_intake.simple_reconciliation import (
     reconcile_simple_revenue,
     write_simple_reconciliation_outputs,
@@ -43,7 +44,7 @@ def write_revenue_summary(
     target.mkdir(parents=True)
     payload = {
         "schema": "br.com.planejamento-reforma-tributaria/revenue-review",
-        "schema_version": "1.1.0",
+        "schema_version": REVENUE_SCHEMA_VERSION,
         "use_case": "UC-003",
         "phase": "REVENUE_REVIEW",
         "review_id": "REV-SYNTHETIC000001",
@@ -155,6 +156,12 @@ def test_uc003c_reconciles_matrix_and_preserves_partial_group_coverage(
     assert MATRIX not in combined
     assert BRANCH not in combined
     assert "12345678901234567" not in combined
+    report = written[4].read_text(encoding="utf-8")
+    assert (
+        "Receita PGDAS-D declarada por estabelecimento fora do escopo documental analisado"
+        in report
+    )
+    assert "Receita declarada fora da cobertura documental" not in report
 
 
 def test_uc003c_reads_month_from_period_start_date(tmp_path: Path) -> None:

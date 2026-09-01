@@ -923,12 +923,20 @@ def _append_documentary_summary(lines: list[str], result: dict[str, Any]) -> Non
             "pgdas_matched_establishment": "PGDAS-D do estabelecimento coberto",
             "documentary_matched_establishment": "Receita documental do estabelecimento coberto",
             "matched_difference": "Diferença no estabelecimento coberto",
-            "uncovered_pgdas_revenue": "Receita PGDAS-D sem base documental correspondente",
+            "uncovered_pgdas_revenue": "Receita PGDAS-D declarada por estabelecimento fora do escopo desta análise",
         }
         for key, label in pgdas_labels.items():
+            if key == "uncovered_pgdas_revenue" and not pgdas.get(
+                "missing_establishments"
+            ):
+                continue
             if key in pgdas_totals:
                 lines.append(f"| {label} | {_summary_value(pgdas_totals.get(key))} |")
         lines.append(f"- Situação: {_summary_status_label(pgdas.get('status'))}.")
+        if pgdas.get("missing_establishments"):
+            lines.append(
+                "- Esse valor pertence a estabelecimento(s) declarado(s) no PGDAS-D que não estão na pasta documental atual; não indica falta de lastro no estabelecimento analisado."
+            )
 
     lines.extend(
         [

@@ -501,7 +501,7 @@ def _report(result: dict[str, Any]) -> str:
         f"- Receita declarada do estabelecimento conciliado: R$ {totals['pgdas_matched_establishment']}",
         f"- Receita documental do estabelecimento: R$ {totals['documentary_matched_establishment']}",
         f"- Diferença no estabelecimento conciliado: R$ {totals['matched_difference']}",
-        f"- Receita declarada fora da cobertura documental: R$ {totals['uncovered_pgdas_revenue']}",
+        f"- Receita PGDAS-D declarada por estabelecimento fora do escopo documental analisado: R$ {totals['uncovered_pgdas_revenue']}",
         "",
         "## Cobertura",
         "",

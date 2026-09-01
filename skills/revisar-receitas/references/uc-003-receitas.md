@@ -19,7 +19,11 @@ Apresentar receitas documentais, devoluções, remessas e operações pendentes 
 
 ## Valores
 
-O total da NF-e/NFC-e vem do `gross_amount` do UC-001, correspondente ao `vNF`. O UC-002 fornece `vProd` por item. A diferença permanece em `unallocated_document_components` e exige explicação; não é descartada nem rateada automaticamente.
+O total da NF-e/NFC-e vem do `gross_amount` do UC-001, correspondente ao `vNF`. O UC-002 fornece `vProd` por item e os totais declarados em `ICMSTot`/`ISSQNtot`. A composição oficial soma `vST`, `vFCPST`, `vFrete`, `vSeg`, `vOutro`, `vII`, `vIPI`, `vIPIDevol` e `vServ`, e subtrai `vDesc` e `vICMSDeson`; a regra aplicável fica registrada para tratar exceções previstas no leiaute. O que cada componente explica vai para `difference_composition`; o que sobra vai para `residual_difference` e é o único valor publicado em `unallocated_document_components`.
+
+Valores de item servem para conferir `vProd` e `indTot`; não são somados novamente aos totais do documento. Componentes ausentes que são opcionais representam zero conforme o leiaute, mas `vProd` ou `vNF` ausentes permanecem indisponíveis e não podem ser tratados como zero.
+
+A diferença nunca é rateada entre os itens nem descartada: ela permanece no documento. `document_item_totals_explained=true` exige resíduo zero em todos os documentos, e a fila `fila-revisao-receitas.csv` recebe apenas os documentos com resíduo, trazendo `composicao_da_diferenca`, `diferenca_explicada` e `residuo_nao_comprovado` para o analista ver a origem antes de decidir.
 
 `net_documentary_revenue_candidate` corresponde à receita operacional documental menos devoluções de venda recebidas. É indicador preparatório, não base tributável concluída.
 

@@ -14,6 +14,7 @@ from defusedxml import ElementTree as SafeET
 from defusedxml.common import DefusedXmlException
 
 from .core import (
+    DOCUMENT_SCHEMA_VERSION,
     ValidationError,
     _format_decimal,
     _local_name,
@@ -24,7 +25,7 @@ from .core import (
 )
 
 CONTENT_SCHEMA = "br.com.planejamento-reforma-tributaria/fiscal-content"
-CONTENT_SCHEMA_VERSION = "1.1.0"
+CONTENT_SCHEMA_VERSION = "1.2.0"
 PRODUCT_NCM_CATALOG = Path("00_CONTROLE") / "catalogo-produtos-ncm.csv"
 
 FIELD_COVERAGE = {
@@ -57,6 +58,21 @@ FIELD_COVERAGE = {
         "ibs_cbs_cst",
     ),
 }
+
+VNF_COMPONENT_FIELDS = (
+    ("vProd", "product", 1, "ICMSTot"),
+    ("vDesc", "discount", -1, "ICMSTot"),
+    ("vICMSDeson", "icms_exempt", -1, "ICMSTot"),
+    ("vST", "icms_st", 1, "ICMSTot"),
+    ("vFCPST", "fcp_st", 1, "ICMSTot"),
+    ("vFrete", "freight", 1, "ICMSTot"),
+    ("vSeg", "insurance", 1, "ICMSTot"),
+    ("vOutro", "other_expenses", 1, "ICMSTot"),
+    ("vII", "import_duty", 1, "ICMSTot"),
+    ("vIPI", "ipi", 1, "ICMSTot"),
+    ("vIPIDevol", "ipi_returned", 1, "ICMSTot"),
+    ("vServ", "services", 1, "ISSQNtot"),
+)
 
 
 def _first_element(element: Any | None, names: set[str]) -> Any | None:
@@ -273,6 +289,74 @@ def _ibs_cbs(element: Any) -> tuple[str | None, str | None, dict[str, str | None
     )
 
 
+def _document_total_components(info: Any) -> dict[str, Any]:
+    """Read the official NF-e ``vNF`` composition from document totals.
+
+    Optional monetary tags absent from ``ICMSTot`` are treated as zero by the
+    NF-e rule. Their raw presence remains visible in ``components`` so a
+    reviewer can distinguish an explicit zero from an unavailable mandatory
+    total such as ``vProd`` or ``vNF``.
+    """
+
+    totals = _first_element(info, {"ICMSTot"})
+    issqn_totals = _first_element(info, {"ISSQNtot"})
+    components: dict[str, str | None] = {}
+    expected = Decimal(0)
+    missing_required: list[str] = []
+    direct_vehicle = _direct_text(_direct_child(info, "ide"), "tpOp") == "2"
+    excluded_for_rule = {"vST", "vFCPST", "vIPIDevol"} if direct_vehicle else set()
+
+    for tag, name, sign, container_name in VNF_COMPONENT_FIELDS:
+        container = totals if container_name == "ICMSTot" else issqn_totals
+        value = _number(_text(container, {tag}))
+        components[name] = value
+        if value is not None and tag not in excluded_for_rule:
+            expected += sign * (_parse_decimal(value) or Decimal(0))
+
+    declared_vnf = _number(_text(totals, {"vNF"}))
+    if components["product"] is None:
+        missing_required.append("vProd")
+    if declared_vnf is None:
+        missing_required.append("vNF")
+
+    declared_value = _parse_decimal(declared_vnf)
+    no_deson_expected = expected + (
+        _parse_decimal(components["icms_exempt"]) or Decimal(0)
+    )
+    if missing_required:
+        status = "UNAVAILABLE"
+        expected_vnf = None
+        difference = None
+        rule = "FATURAMENTO_DIRETO" if direct_vehicle else "PADRAO"
+    elif (
+        not direct_vehicle
+        and components["icms_exempt"] is not None
+        and declared_value == no_deson_expected
+    ):
+        # The validation rules tolerate a vNF that does not subtract
+        # vICMSDeson. Preserve that accepted representation instead of
+        # manufacturing a residual for a document that is internally coherent.
+        expected_vnf = _format_decimal(no_deson_expected)
+        difference = _format_decimal(declared_value - no_deson_expected)
+        status = "MATCHED"
+        rule = "PADRAO_SEM_DEDUCAO_ICMS_DESON"
+    else:
+        expected_vnf = _format_decimal(expected)
+        difference = _format_decimal((declared_value or Decimal(0)) - expected)
+        status = "MATCHED" if difference == "0.00" else "MISMATCH"
+        rule = "FATURAMENTO_DIRETO" if direct_vehicle else "PADRAO"
+
+    return {
+        "declared_vnf": declared_vnf,
+        "expected_vnf": expected_vnf,
+        "difference": difference,
+        "status": status,
+        "rule": rule,
+        "missing_required": missing_required,
+        "components": components,
+    }
+
+
 def _base_record(
     document: dict[str, Any],
     validation_record: dict[str, Any],
@@ -310,7 +394,14 @@ def _base_record(
         "gross_amount": None,
         "discount": None,
         "freight": None,
+        "insurance": None,
         "other_expenses": None,
+        "ipi_amount": None,
+        "icms_st_amount": None,
+        "icms_exempt_amount": None,
+        "fcp_st_amount": None,
+        "import_duty_amount": None,
+        "ipi_returned_amount": None,
         "includes_document_total": None,
         "transport_modal": None,
         "nature_operation": None,
@@ -333,6 +424,7 @@ def _base_record(
             "iss_rate": None,
         },
         "components": [],
+        "document_total_components": None,
         "referenced_document_count": 0,
         "findings": [],
         "content_status": "READY",
@@ -356,6 +448,7 @@ def _product_records(
     items = [item for item in info.iter() if _local_name(item.tag) == "det"]
     records: list[dict[str, Any]] = []
     item_amounts: list[Decimal] = []
+    document_total_components = _document_total_components(info)
     for index, item in enumerate(items, start=1):
         item_number_raw = item.attrib.get("nItem", "")
         item_number = int(item_number_raw) if item_number_raw.isdigit() else index
@@ -388,8 +481,20 @@ def _product_records(
                 "gross_amount": _number(_direct_text(product, "vProd")),
                 "discount": _number(_direct_text(product, "vDesc")),
                 "freight": _number(_direct_text(product, "vFrete")),
+                "insurance": _number(_direct_text(product, "vSeg")),
                 "other_expenses": _number(_direct_text(product, "vOutro")),
+                "ipi_amount": _number(_text(ipi_detail, {"vIPI"})),
+                "icms_st_amount": _number(_text(_tax_detail(icms), {"vICMSST"})),
+                "icms_exempt_amount": _number(_text(_tax_detail(icms), {"vICMSDeson"})),
+                "fcp_st_amount": _number(_text(_tax_detail(icms), {"vFCPST"})),
+                "import_duty_amount": _number(
+                    _text(_tax_detail(_first_element(tax, {"II"})), {"vII"})
+                ),
+                "ipi_returned_amount": _number(
+                    _text(_first_element(tax, {"impostoDevol"}), {"vIPIDevol"})
+                ),
                 "includes_document_total": _direct_text(product, "indTot"),
+                "document_total_components": document_total_components,
                 "cclass_trib": cclass_trib,
                 "ibs_cbs_cst": ibs_cbs_cst,
                 "ibs_cbs": ibs_cbs,
@@ -451,7 +556,8 @@ def _product_records(
             item_amounts.append(amount)
         records.append(record)
 
-    declared_total = _parse_decimal(_text(_first_element(info, {"ICMSTot"}), {"vProd"}))
+    totals = _first_element(info, {"ICMSTot"})
+    declared_total = _parse_decimal(_text(totals, {"vProd"}))
     calculated_total = sum(item_amounts, Decimal(0))
     if declared_total is None:
         reconciliation_status = "UNAVAILABLE"
@@ -465,6 +571,11 @@ def _product_records(
         "calculated_content_total": _format_decimal(calculated_total),
         "declared_content_total": _format_decimal(declared_total),
         "difference": _format_decimal(difference),
+        "document_total_components": document_total_components,
+        "declared_document_total": document_total_components["declared_vnf"],
+        "calculated_document_total": document_total_components["expected_vnf"],
+        "document_total_difference": document_total_components["difference"],
+        "document_total_status": document_total_components["status"],
     }
     return records, reconciliation
 
@@ -635,8 +746,13 @@ def _load_validation_result(folder: Path) -> dict[str, Any]:
         raise ValidationError(
             "validation-result.json deve ser JSON UTF-8 válido"
         ) from error
-    if result.get("use_case") != "UC-001":
-        raise ValidationError("validation-result.json não pertence ao UC-001")
+    if (
+        result.get("use_case") != "UC-001"
+        or result.get("schema_version") != DOCUMENT_SCHEMA_VERSION
+    ):
+        raise ValidationError(
+            "validation-result.json não pertence à versão vigente do UC-001"
+        )
     if not result.get("gates", {}).get("planning_authorized"):
         raise ValidationError("UC-002 exige ao menos um escopo autorizado pelo UC-001")
     return result

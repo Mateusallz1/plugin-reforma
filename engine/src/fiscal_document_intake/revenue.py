@@ -12,10 +12,11 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from .content import CONTENT_SCHEMA_VERSION
 from .core import ValidationError, _format_decimal, _parse_decimal
 
 REVENUE_SCHEMA = "br.com.planejamento-reforma-tributaria/revenue-review"
-REVENUE_SCHEMA_VERSION = "1.1.0"
+REVENUE_SCHEMA_VERSION = "1.2.0"
 DECISION_FILE = Path("00_CONTROLE") / "classificacao-receitas.csv"
 PENDING_CLASSES = {
     "INVALID_CFOP_PENDING",
@@ -216,6 +217,80 @@ def _sum(records: list[dict[str, Any]], field: str) -> Decimal:
     return sum((_decimal(record.get(field)) for record in records), Decimal(0))
 
 
+def _document_composition(
+    items: list[dict[str, Any]], document_total: Decimal, item_total: Decimal
+) -> tuple[dict[str, str], Decimal, Decimal, str]:
+    """Explain ``vNF`` from the document-level NF-e totals.
+
+    Item-level values remain evidence, but the official composition uses the
+    totals in ``ICMSTot``/``ISSQNtot``. This avoids double counting and avoids
+    inventing an allocation when a component was not supplied by the issuer.
+    """
+
+    raw_totals = next(
+        (
+            item.get("document_total_components")
+            for item in items
+            if isinstance(item.get("document_total_components"), dict)
+        ),
+        None,
+    )
+    raw_components = (
+        raw_totals.get("components") if isinstance(raw_totals, dict) else None
+    )
+    if not isinstance(raw_components, dict):
+        residual = document_total - item_total
+        status = (
+            "EXPLAINED_BY_ITEM_TOTAL" if residual == 0 else "COMPONENTS_UNAVAILABLE"
+        )
+        return {}, Decimal(0), residual, status
+
+    component_rules = (
+        ("discount", "desconto", -1),
+        ("icms_exempt", "icms_desonerado", -1),
+        ("icms_st", "icms_st", 1),
+        ("fcp_st", "fcp_st", 1),
+        ("freight", "frete", 1),
+        ("insurance", "seguro", 1),
+        ("other_expenses", "outras_despesas", 1),
+        ("import_duty", "ii", 1),
+        ("ipi", "ipi", 1),
+        ("ipi_returned", "ipi_devolvido", 1),
+        ("services", "servicos", 1),
+    )
+    excluded_for_rule = (
+        {"icms_st", "fcp_st", "ipi_returned"}
+        if raw_totals.get("rule") == "FATURAMENTO_DIRETO"
+        else set()
+    )
+    if raw_totals.get("rule") == "PADRAO_SEM_DEDUCAO_ICMS_DESON":
+        excluded_for_rule.add("icms_exempt")
+    expected = _decimal(raw_components.get("product"))
+    composition: dict[str, str] = {}
+    for field, label, sign in component_rules:
+        if field in excluded_for_rule:
+            continue
+        value = _decimal(raw_components.get(field))
+        if value:
+            signed = value * sign
+            composition[label] = _money(signed)
+            expected += signed
+    explained = expected - item_total
+    document_residual = document_total - expected
+    item_product_difference = _decimal(raw_components.get("product")) - item_total
+    residual = document_residual if document_residual != 0 else item_product_difference
+    declared_status = str(raw_totals.get("status") or "")
+    if declared_status == "UNAVAILABLE":
+        status = "COMPONENTS_UNAVAILABLE"
+    elif document_residual != 0:
+        status = "RESIDUAL"
+    elif item_product_difference != 0:
+        status = "ITEM_TOTAL_MISMATCH"
+    else:
+        status = "EXPLAINED"
+    return composition, explained, residual, status
+
+
 def _money(value: Decimal) -> str:
     return _format_decimal(value) or "0.00"
 
@@ -239,8 +314,11 @@ def review_revenue_folder(
     if (
         validation.get("use_case") != "UC-001"
         or content_summary.get("use_case") != "UC-002"
+        or content_summary.get("schema_version") != CONTENT_SCHEMA_VERSION
     ):
-        raise ValidationError("UC-003B exige saídas coerentes dos UC-001 e UC-002")
+        raise ValidationError(
+            "UC-003B exige saídas vigentes e coerentes dos UC-001 e UC-002"
+        )
     if not content_summary.get("gates", {}).get("uc003_analysis_authorized"):
         raise ValidationError("UC-002 não autorizou o UC-003")
     content_records = _load_jsonl(base / "04_CONTEUDO" / "normalized-items.local.jsonl")
@@ -306,8 +384,14 @@ def review_revenue_folder(
         decision = decisions.get(document_ref)
         final_class = decision["classification"] if decision else automatic_class
         document_total = _decimal(document.get("gross_amount"))
-        item_total = _sum(items, "gross_amount")
+        included_items = [
+            item for item in items if item.get("includes_document_total") != "0"
+        ]
+        item_total = _sum(included_items, "gross_amount")
         difference = document_total - item_total
+        composition, explained, residual, composition_status = _document_composition(
+            items, document_total, item_total
+        )
         revenue_records.append(
             {
                 "document_ref": document_ref,
@@ -320,6 +404,10 @@ def review_revenue_folder(
                 "document_total": _money(document_total),
                 "item_total": _money(item_total),
                 "unallocated_difference": _money(difference),
+                "difference_composition": composition,
+                "explained_difference": _money(explained),
+                "residual_difference": _money(residual),
+                "composition_status": composition_status,
                 "item_count": len(items),
                 "cfops": sorted({str(item.get("cfop") or "") for item in items}),
                 "analyst_decision": decision,
@@ -350,6 +438,10 @@ def review_revenue_folder(
                 "document_total": item.get("gross_amount") or "0.00",
                 "item_total": item.get("gross_amount") or "0.00",
                 "unallocated_difference": "0.00",
+                "difference_composition": {},
+                "explained_difference": "0.00",
+                "residual_difference": "0.00",
+                "composition_status": "NOT_APPLICABLE",
                 "item_count": 1,
                 "cfops": [item.get("cfop")] if item.get("cfop") else [],
                 "analyst_decision": decision,
@@ -371,7 +463,9 @@ def review_revenue_folder(
     unexplained = [
         record
         for record in revenue_records
-        if _decimal(record["unallocated_difference"]) != 0
+        if _decimal(record["residual_difference"]) != 0
+        or record.get("composition_status")
+        in {"COMPONENTS_UNAVAILABLE", "ITEM_TOTAL_MISMATCH"}
     ]
 
     def total_for(*classes: str) -> Decimal:
@@ -482,10 +576,7 @@ def review_revenue_folder(
             "pending_revenue_treatment": _money(pending_amount),
             "unallocated_document_components": _money(
                 sum(
-                    (
-                        _decimal(record["unallocated_difference"])
-                        for record in unexplained
-                    ),
+                    (_decimal(record["residual_difference"]) for record in unexplained),
                     Decimal(0),
                 )
             ),
@@ -534,7 +625,7 @@ def _report(result: dict[str, Any]) -> str:
         f"- Receita documental líquida candidata: {totals['net_documentary_revenue_candidate']}",
         f"- Operações fora da receita: {totals['excluded_non_revenue_operations']}",
         f"- Tratamento pendente: {totals['pending_revenue_treatment']}",
-        f"- Componentes documentais não alocados: {totals['unallocated_document_components']}",
+        f"- Resíduo documental não comprovado: {totals['unallocated_document_components']}",
         "",
         "## Classificações",
         "",
@@ -585,6 +676,9 @@ def _queue(records: list[dict[str, Any]]) -> str:
         "document_total",
         "item_total",
         "unallocated_difference",
+        "composicao_da_diferenca",
+        "diferenca_explicada",
+        "residuo_nao_comprovado",
         "classificacao",
         "status",
         "aprovado_por",
@@ -598,7 +692,7 @@ def _queue(records: list[dict[str, Any]]) -> str:
     for record in records:
         if (
             record["final_classification"] not in PENDING_CLASSES
-            and _decimal(record["unallocated_difference"]) == 0
+            and _decimal(record["residual_difference"]) == 0
         ):
             continue
         writer.writerow(
@@ -611,6 +705,12 @@ def _queue(records: list[dict[str, Any]]) -> str:
                 "document_total": record["document_total"],
                 "item_total": record["item_total"],
                 "unallocated_difference": record["unallocated_difference"],
+                "composicao_da_diferenca": " ".join(
+                    f"{label}={value}"
+                    for label, value in sorted(record["difference_composition"].items())
+                ),
+                "diferenca_explicada": record["explained_difference"],
+                "residuo_nao_comprovado": record["residual_difference"],
                 "classificacao": "",
                 "status": "PENDENTE",
                 "aprovado_por": "",

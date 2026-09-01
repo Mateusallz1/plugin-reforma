@@ -143,6 +143,24 @@ def test_uc002_requires_uc001_authorization(tmp_path: Path) -> None:
         extract_content_folder(folder)
 
 
+def test_uc002_rejects_legacy_uc001_schema(tmp_path: Path) -> None:
+    folder = make_folder(tmp_path, "legacy-validation", document_families=["NFE"])
+    key = access_key(COMPANY, "55", 71)
+    (folder / "01_XML" / "sale.xml").write_text(
+        nfe_xml(key, "55", COMPANY, OTHER, "2026-03-05", "100.00"),
+        encoding="utf-8",
+    )
+    validation = validate_folder(folder)
+    write_outputs(validation, folder / "03_SAIDAS")
+    validation_path = folder / "03_SAIDAS" / "validation-result.json"
+    legacy = json.loads(validation_path.read_text(encoding="utf-8"))
+    legacy["schema_version"] = "1.8.0"
+    validation_path.write_text(json.dumps(legacy), encoding="utf-8")
+
+    with pytest.raises(ValidationError, match="versão vigente"):
+        extract_content_folder(folder)
+
+
 def test_uc002_ignores_duplicate_document_representations(tmp_path: Path) -> None:
     folder = make_folder(
         tmp_path,

@@ -98,6 +98,13 @@ def write_reconciliation(folder: Path, *, group_complete: bool = False) -> None:
                     [] if group_complete else ["ESTAB-SYNTHETIC"]
                 )
             },
+            "totals": {
+                "pgdas_group_declared": "117505.00",
+                "pgdas_matched_establishment": "117505.00",
+                "documentary_matched_establishment": "117505.00",
+                "matched_difference": "0.00",
+                "uncovered_pgdas_revenue": "0.00" if group_complete else "117505.00",
+            },
             "gates": {
                 "documentary_scope_reconciled": True,
                 "group_coverage_complete": group_complete,
@@ -343,6 +350,36 @@ def test_status_explains_partial_group_in_user_language(tmp_path: Path) -> None:
     assert "group_coverage_complete" not in report
     assert "ACQUISITION_PLANNING" not in report
     assert "CONSOLIDATED_GROUP" not in report
+    assert (
+        "Receita PGDAS-D declarada por estabelecimento fora do escopo desta análise"
+        in report
+    )
+    assert "sem base documental correspondente" not in report
+
+
+def test_status_routes_legacy_acquisition_schema_to_reprocessing(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "company"
+    write_validation(folder)
+    write_content(folder)
+    write_json(
+        folder / "05_REVISAO_AQUISICOES" / "acquisition-summary.json",
+        {
+            "use_case": "UC-003",
+            "schema_version": "1.0.0",
+            "phase": "ACQUISITION_REVIEW",
+            "review_id": "ACQ-LEGACY",
+            "gates": {"uc003_execution_ready": True},
+        },
+    )
+
+    result = evaluate_planning_status(folder)
+
+    assert result["current_stage"] == "OPERATION_REVIEWS"
+    assert "RUN_ACQUISITION_REVIEW" in {
+        item["action"] for item in result["available_actions"]
+    }
 
 
 @pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="Windows launcher")
