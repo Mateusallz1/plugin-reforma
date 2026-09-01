@@ -107,8 +107,8 @@ def test_batch_discovers_and_processes_multiple_periods_incrementally(
     )
     assert validation["gates"]["restricted_scopes"] == []
     assert (
-        validation["documents"]["analysis_groups"]["NFSE_PRESTADOS"]["movement_status"]
-        == "SEM_MOVIMENTACAO"
+        validation["documents"]["analysis_groups"]["NFSE_PRESTADOS"]["document_status"]
+        == "SEM_DOCUMENTO"
     )
 
 

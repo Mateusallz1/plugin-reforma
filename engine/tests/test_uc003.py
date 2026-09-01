@@ -199,7 +199,7 @@ def test_uc003_handles_period_without_acquisitions(tmp_path: Path) -> None:
 
     result = review_acquisitions_folder(folder, RULESET)
 
-    assert result["status"] == "ACQUISITION_REVIEW_NO_MOVEMENT"
+    assert result["status"] == "ACQUISITION_REVIEW_NO_DOCUMENT"
     assert result["acquisition_records"] == 0
     assert result["gates"]["uc003_execution_ready"] is True
     assert result["gates"]["acquisition_review_required"] is False

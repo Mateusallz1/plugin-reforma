@@ -5,10 +5,18 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .core import ValidationError
+from .acquisition import ACQUISITION_SCHEMA_VERSION
+from .content import CONTENT_SCHEMA_VERSION
+from .core import DOCUMENT_SCHEMA_VERSION, ValidationError
+from .revenue import REVENUE_SCHEMA_VERSION
+from .simple_reconciliation import SIMPLE_RECONCILIATION_SCHEMA_VERSION
 
 PLANNING_STATUS_SCHEMA = "br.com.planejamento-reforma-tributaria/planning-status"
-PLANNING_STATUS_SCHEMA_VERSION = "1.0.0"
+PLANNING_STATUS_SCHEMA_VERSION = "1.2.0"
+DOCUMENTARY_SUMMARY_SCHEMA = (
+    "br.com.planejamento-reforma-tributaria/documentary-summary"
+)
+DOCUMENTARY_SUMMARY_SCHEMA_VERSION = "1.0.0"
 
 
 def _load_optional(path: Path, label: str) -> dict[str, Any] | None:
@@ -49,6 +57,184 @@ def _required_input(
     }
 
 
+def _mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _documentary_summary(
+    validation: dict[str, Any] | None,
+    content: dict[str, Any] | None,
+    acquisition: dict[str, Any] | None,
+    revenue: dict[str, Any] | None,
+    reconciliation: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Build an aggregate audit view without copying commercial details.
+
+    Values in this view are observations from completed local stages. Missing
+    values remain ``None`` instead of being converted to zero, because an
+    unavailable source is not evidence of no movement.
+    """
+
+    documents = _mapping(validation.get("documents")) if validation else {}
+    pdf_evidence = _mapping(validation.get("pdf_evidence")) if validation else {}
+    validation_gates = _mapping(validation.get("gates")) if validation else {}
+    direction_counts = _mapping(documents.get("direction_counts"))
+    direction_amounts = _mapping(documents.get("direction_gross_amounts"))
+
+    flows = {
+        direction: {
+            "document_count": direction_counts.get(direction),
+            "gross_amount": direction_amounts.get(direction),
+        }
+        for direction in ("ENTRADA", "SAIDA")
+    }
+
+    operational_groups: list[dict[str, Any]] = []
+    for code, group_value in _mapping(documents.get("analysis_groups")).items():
+        group = _mapping(group_value)
+        detected_count = group.get("detected_count")
+        included_count = group.get("count")
+        if not detected_count and not included_count:
+            continue
+        operational_groups.append(
+            {
+                "group": code,
+                "label": group.get("label"),
+                "direction": group.get("direction"),
+                "document_status": group.get("document_status"),
+                "detected_count": detected_count,
+                "included_count": included_count,
+                "gross_amount": group.get("gross_amount"),
+            }
+        )
+
+    content_data = _mapping(content)
+    acquisition_data = _mapping(acquisition)
+    revenue_data = _mapping(revenue)
+    reconciliation_data = _mapping(reconciliation)
+    revenue_totals = _mapping(revenue_data.get("totals"))
+    reconciliation_totals = _mapping(reconciliation_data.get("totals"))
+    reconciliation_gates = _mapping(reconciliation_data.get("gates"))
+
+    if validation is None:
+        status = "NOT_APURADO"
+    elif (
+        not validation_gates.get("planning_authorized")
+        or validation.get("status") == "DOCUMENT_BASE_READY_WITH_SCOPE_LIMITATIONS"
+    ):
+        status = "PARCIAL"
+    else:
+        status = "APURADO"
+
+    acquisition_gates = _mapping(acquisition_data.get("gates"))
+    revenue_gates = _mapping(revenue_data.get("gates"))
+    if acquisition is None:
+        acquisition_nature_status = "NAO_INICIADO"
+    elif acquisition_gates.get("analyst_review_required"):
+        acquisition_nature_status = "PENDENTE_ANALISTA"
+    else:
+        acquisition_nature_status = "CONCLUIDO_OPERACIONAL"
+
+    if revenue is None:
+        revenue_classification_status = "NAO_INICIADO"
+    elif not revenue_gates.get("cfop_classification_complete", True):
+        revenue_classification_status = "PENDENTE_ANALISTA"
+    else:
+        revenue_classification_status = "CONCLUIDO_OPERACIONAL"
+
+    if reconciliation is None:
+        pgdas_status = "NAO_INICIADO"
+    elif reconciliation_gates.get(
+        "group_coverage_complete"
+    ) and reconciliation_gates.get("documentary_scope_reconciled"):
+        pgdas_status = "CONCILIADO"
+    else:
+        pgdas_status = "PARCIAL_O_PENDENTE"
+
+    return {
+        "schema": DOCUMENTARY_SUMMARY_SCHEMA,
+        "schema_version": DOCUMENTARY_SUMMARY_SCHEMA_VERSION,
+        "status": status,
+        "coverage": {
+            "xml_files_found": documents.get("xml_files_found"),
+            "fiscal_documents_found": documents.get("fiscal_documents_found"),
+            "included_documents": documents.get("included"),
+            "excluded_documents": documents.get("excluded"),
+            "reported_documents": documents.get("reported"),
+            "pdf_files_found": pdf_evidence.get("pdf_files_found"),
+        },
+        "document_types": documents.get("document_type_counts", {}),
+        "flows": flows,
+        "operational_groups": sorted(
+            operational_groups, key=lambda item: str(item.get("group") or "")
+        ),
+        "content": {
+            "records_total": content_data.get("records_total"),
+            "record_kind_counts": content_data.get("record_kind_counts", {}),
+            "component_count": content_data.get("component_count"),
+            "eligible_records": _mapping(content_data.get("uc003_eligibility")).get(
+                "eligible_records"
+            ),
+            "restricted_records": _mapping(content_data.get("uc003_eligibility")).get(
+                "restricted_records"
+            ),
+        },
+        "acquisitions": {
+            "records": acquisition_data.get("acquisition_records"),
+            "category_counts": acquisition_data.get("category_counts", {}),
+            "category_amounts": acquisition_data.get("category_amounts", {}),
+            "nature_status": acquisition_nature_status,
+        },
+        "revenue": {
+            "reviewed_documents": revenue_data.get("reviewed_documents"),
+            "totals": {
+                key: revenue_totals.get(key)
+                for key in (
+                    "gross_revenue_goods",
+                    "gross_revenue_services",
+                    "gross_revenue_transport",
+                    "other_revenue",
+                    "gross_operational_revenue",
+                    "sales_returns_inbound",
+                    "excluded_non_revenue_operations",
+                    "pending_revenue_treatment",
+                    "unallocated_document_components",
+                )
+            },
+            "classification_status": revenue_classification_status,
+        },
+        "pgdas_reconciliation": {
+            "status": pgdas_status,
+            "totals": {
+                key: reconciliation_totals.get(key)
+                for key in (
+                    "pgdas_group_declared",
+                    "pgdas_matched_establishment",
+                    "documentary_matched_establishment",
+                    "matched_difference",
+                    "uncovered_pgdas_revenue",
+                )
+            },
+            "missing_establishments": len(
+                _mapping(reconciliation_data.get("coverage")).get(
+                    "missing_establishment_refs", []
+                )
+                or []
+            ),
+        },
+        "classification_status": {
+            "acquisition_nature": acquisition_nature_status,
+            "revenue_cfop": revenue_classification_status,
+            "pgdas": pgdas_status,
+        },
+        "limitations": [
+            "Resumo preliminar de evidência local; não é conclusão de receita tributável, crédito ou débito.",
+            "Valores ausentes significam fonte ainda não disponível, não ausência de movimento.",
+            "Descrições comerciais e identificadores fiscais permanecem fora deste agregado.",
+        ],
+    }
+
+
 def _base_result() -> dict[str, Any]:
     return {
         "schema": PLANNING_STATUS_SCHEMA,
@@ -70,6 +256,7 @@ def _base_result() -> dict[str, Any]:
             "can_continue": "O plugin pode iniciar a validação automaticamente.",
             "next_step": "Validar os documentos fiscais fornecidos.",
         },
+        "documentary_summary": _documentary_summary(None, None, None, None, None),
     }
 
 
@@ -134,6 +321,25 @@ def evaluate_planning_status(
         base / "07_CONCILIACAO_SIMPLES" / "simple-reconciliation-summary.json",
         "07_CONCILIACAO_SIMPLES/simple-reconciliation-summary.json",
     )
+    if (
+        validation is not None
+        and validation.get("schema_version") != DOCUMENT_SCHEMA_VERSION
+    ):
+        validation = None
+    if content is not None and content.get("schema_version") != CONTENT_SCHEMA_VERSION:
+        content = None
+    if (
+        acquisition is not None
+        and acquisition.get("schema_version") != ACQUISITION_SCHEMA_VERSION
+    ):
+        acquisition = None
+    if revenue is not None and revenue.get("schema_version") != REVENUE_SCHEMA_VERSION:
+        revenue = None
+    if (
+        reconciliation is not None
+        and reconciliation.get("schema_version") != SIMPLE_RECONCILIATION_SCHEMA_VERSION
+    ):
+        reconciliation = None
     pgdas_available = bool(
         pgdas_folder and Path(pgdas_folder).expanduser().resolve().is_dir()
     )
@@ -148,6 +354,9 @@ def evaluate_planning_status(
         "pgdas_available": pgdas_available,
     }
     result = _base_result()
+    result["documentary_summary"] = _documentary_summary(
+        validation, content, acquisition, revenue, reconciliation
+    )
 
     if validation is None:
         result["available_actions"].append(
@@ -325,6 +534,10 @@ def evaluate_planning_status(
                         "documentos complementares",
                     ],
                 )
+            )
+        elif revenue.get("status") == "REVENUE_REVIEW_NO_DOCUMENT":
+            result["summary"]["completed"].append(
+                "Nenhuma receita documental foi encontrada nesta competência; a conciliação com a declaração dirá se houve movimento."
             )
         else:
             result["summary"]["completed"].append(
@@ -527,6 +740,205 @@ def evaluate_planning_status(
     return _finalize(result, material)
 
 
+def _summary_value(value: Any) -> str:
+    return "não apurado" if value is None else str(value)
+
+
+def _summary_status_label(value: Any) -> str:
+    return {
+        "NOT_APURADO": "Ainda não apurado",
+        "PARCIAL": "Apuração parcial",
+        "APURADO": "Apurado com os documentos disponíveis",
+        "NAO_INICIADO": "Ainda não iniciado",
+        "PENDENTE_ANALISTA": "Pendente de aprovação do analista",
+        "CONCLUIDO_OPERACIONAL": "Concluído no nível operacional",
+        "CONCILIADO": "Conciliado para o escopo coberto",
+        "PARCIAL_O_PENDENTE": "Parcial ou pendente de revisão",
+    }.get(str(value), _summary_value(value))
+
+
+def _append_documentary_summary(lines: list[str], result: dict[str, Any]) -> None:
+    """Append a user-facing aggregate without exposing commercial details."""
+
+    documentary = _mapping(result.get("documentary_summary"))
+    coverage = _mapping(documentary.get("coverage"))
+    flows = _mapping(documentary.get("flows"))
+    content = _mapping(documentary.get("content"))
+    acquisitions = _mapping(documentary.get("acquisitions"))
+    revenue = _mapping(documentary.get("revenue"))
+    revenue_totals = _mapping(revenue.get("totals"))
+    pgdas = _mapping(documentary.get("pgdas_reconciliation"))
+    pgdas_totals = _mapping(pgdas.get("totals"))
+
+    lines.extend(
+        [
+            "## Resumo documental preliminar",
+            "",
+            "Esta é uma fotografia dos dados observados até agora. Ela serve para conferência e auditoria, mas não conclui receita tributável, crédito ou débito.",
+            "",
+            f"- Estado do resumo: {_summary_status_label(documentary.get('status'))}",
+            f"- XMLs encontrados: {_summary_value(coverage.get('xml_files_found'))}",
+            f"- Documentos fiscais identificados: {_summary_value(coverage.get('fiscal_documents_found'))}",
+            f"- Documentos incluídos: {_summary_value(coverage.get('included_documents'))}",
+            f"- Documentos excluídos: {_summary_value(coverage.get('excluded_documents'))}",
+            f"- PDFs encontrados: {_summary_value(coverage.get('pdf_files_found'))}",
+            "",
+            "### Entradas e saídas",
+            "",
+            "| Fluxo | Documentos | Valor bruto |",
+            "|---|---:|---:|",
+        ]
+    )
+    for direction, label in (("ENTRADA", "Entradas"), ("SAIDA", "Saídas")):
+        flow = _mapping(flows.get(direction))
+        lines.append(
+            f"| {label} | {_summary_value(flow.get('document_count'))} | "
+            f"{_summary_value(flow.get('gross_amount'))} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "### Documentos por tipo",
+            "",
+            "| Tipo | Documentos |",
+            "|---|---:|",
+        ]
+    )
+    type_labels = {"NFE": "NF-e", "NFCE": "NFC-e", "NFSE": "NFS-e", "CTE": "CT-e"}
+    document_types = _mapping(documentary.get("document_types"))
+    if document_types:
+        for document_type, count in sorted(document_types.items()):
+            lines.append(
+                f"| {type_labels.get(document_type, document_type)} | {count} |"
+            )
+    else:
+        lines.append("| Nenhum tipo apurado | não apurado |")
+
+    lines.extend(
+        [
+            "",
+            "### Populações identificadas",
+            "",
+            "| População | Registros | Situação |",
+            "|---|---:|---|",
+        ]
+    )
+    kind_labels = {
+        "PRODUCT": "Produtos",
+        "SERVICE": "Serviços",
+        "TRANSPORT": "Transportes",
+    }
+    kind_counts = _mapping(content.get("record_kind_counts"))
+    if kind_counts:
+        for kind, count in sorted(kind_counts.items()):
+            lines.append(f"| {kind_labels.get(kind, kind)} | {count} | Observado |")
+    elif content.get("records_total") is not None:
+        lines.append(
+            f"| Conteúdo normalizado | {content['records_total']} | Observado |"
+        )
+    else:
+        lines.append("| Conteúdo fiscal | não apurado | Ainda não iniciado |")
+    component_status = (
+        "Observado"
+        if content.get("component_count") is not None
+        else "Ainda não iniciado"
+    )
+    lines.append(
+        f"| Componentes extraídos | {_summary_value(content.get('component_count'))} | {component_status} |"
+    )
+
+    lines.extend(
+        [
+            "",
+            "### Aquisições",
+            "",
+            "| Categoria | Itens | Valor dos itens |",
+            "|---|---:|---:|",
+        ]
+    )
+    category_counts = _mapping(acquisitions.get("category_counts"))
+    category_amounts = _mapping(acquisitions.get("category_amounts"))
+    category_labels = {
+        "MERCADORIA": "Mercadorias",
+        "SERVICO": "Serviços",
+        "TRANSPORTE": "Transportes",
+    }
+    if category_counts:
+        for category, count in sorted(category_counts.items()):
+            lines.append(
+                f"| {category_labels.get(category, category)} | {count} | "
+                f"{_summary_value(category_amounts.get(category))} |"
+            )
+    else:
+        lines.append("| Aquisições | não apurado | não apurado |")
+    lines.append(
+        f"- Natureza econômica: {_summary_status_label(acquisitions.get('nature_status'))}."
+    )
+
+    lines.extend(
+        [
+            "",
+            "### Receitas documentais",
+            "",
+            "| Componente | Valor |",
+            "|---|---:|",
+        ]
+    )
+    revenue_labels = {
+        "gross_revenue_goods": "Mercadorias",
+        "gross_revenue_services": "Serviços",
+        "gross_revenue_transport": "Transportes",
+        "other_revenue": "Outras receitas",
+        "gross_operational_revenue": "Receita operacional documental",
+        "sales_returns_inbound": "Devoluções",
+        "excluded_non_revenue_operations": "Remessas e operações fora da receita",
+        "pending_revenue_treatment": "Tratamento pendente",
+        "unallocated_document_components": "Componentes não alocados",
+    }
+    if revenue_totals and any(value is not None for value in revenue_totals.values()):
+        for key, label in revenue_labels.items():
+            if key in revenue_totals:
+                lines.append(f"| {label} | {_summary_value(revenue_totals.get(key))} |")
+    else:
+        lines.append("| Receita documental | não apurada |")
+    lines.append(
+        f"- Classificação por CFOP: {_summary_status_label(revenue.get('classification_status'))}."
+    )
+
+    if any(value is not None for value in pgdas_totals.values()) or pgdas.get(
+        "status"
+    ) not in {None, "NAO_INICIADO"}:
+        lines.extend(
+            [
+                "",
+                "### Conciliação com o PGDAS-D",
+                "",
+                "| Indicador | Valor |",
+                "|---|---:|",
+            ]
+        )
+        pgdas_labels = {
+            "pgdas_group_declared": "PGDAS-D declarado no grupo",
+            "pgdas_matched_establishment": "PGDAS-D do estabelecimento coberto",
+            "documentary_matched_establishment": "Receita documental do estabelecimento coberto",
+            "matched_difference": "Diferença no estabelecimento coberto",
+            "uncovered_pgdas_revenue": "Receita PGDAS-D sem base documental correspondente",
+        }
+        for key, label in pgdas_labels.items():
+            if key in pgdas_totals:
+                lines.append(f"| {label} | {_summary_value(pgdas_totals.get(key))} |")
+        lines.append(f"- Situação: {_summary_status_label(pgdas.get('status'))}.")
+
+    lines.extend(
+        [
+            "",
+            "Os valores acima são apresentados para conferência. A aprovação da natureza das aquisições e as conclusões tributárias continuam nas etapas próprias.",
+            "",
+        ]
+    )
+
+
 def _report(result: dict[str, Any]) -> str:
     summary = result["summary"]
     scope_labels = {
@@ -544,9 +956,11 @@ def _report(result: dict[str, Any]) -> str:
         "",
         summary["situation"],
         "",
-        "## O que foi concluído",
-        "",
     ]
+    documentary_lines: list[str] = []
+    _append_documentary_summary(documentary_lines, result)
+    lines.extend(documentary_lines)
+    lines.extend(["## O que foi concluído", ""])
     lines.extend(f"- {item}" for item in summary["completed"])
     if not summary["completed"]:
         lines.append("- Nenhuma etapa concluída ainda.")

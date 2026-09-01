@@ -10,7 +10,7 @@ O UC-001 avalia separadamente os escopos `NFE_NFCE`, `NFSE` e `CTE`. Um problema
 
 Cada registro expõe `analysis_scope` e `authorized_for_planning`. Somente registros incluídos pertencentes a um escopo `READY` podem alimentar etapas posteriores.
 
-Um escopo `READY` não implica criar todas as análises operacionais possíveis. Consulte `documents.analysis_groups`: crie somente as análises com `operational_analysis_required=true`; grupos `SEM_MOVIMENTACAO` permanecem registrados, mas não produzem análise vazia.
+Um escopo `READY` não implica criar todas as análises operacionais possíveis. Consulte `documents.analysis_groups`: crie somente as análises com `operational_analysis_required=true`; grupos `SEM_DOCUMENTO` permanecem registrados, mas não produzem análise vazia.
 
 ## Gates globais
 

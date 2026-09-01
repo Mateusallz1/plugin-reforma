@@ -159,6 +159,27 @@ def test_uc003b_separates_sales_returns_purchase_returns_and_remittances(
     assert result["totals"]["excluded_non_revenue_operations"] == "500.00"
 
 
+def test_uc003b_treats_apurated_zero_as_ready_population(tmp_path: Path) -> None:
+    """Competência só com entradas apura receita zero, e zero é população pronta."""
+    folder = make_folder(tmp_path, "revenue-only-purchases", document_families=["NFE"])
+    purchase_key = access_key(OTHER, "55", 94)
+    (folder / "01_XML" / "purchase.xml").write_text(
+        nfe_xml(purchase_key, "55", OTHER, COMPANY, "2026-03-07", "300.00"),
+        encoding="utf-8",
+    )
+    prepare_content(folder)
+
+    result = review_revenue_folder(folder, CFOP_SNAPSHOT, ANALYST_RULES)
+
+    assert result["status"] == "REVENUE_REVIEW_NO_DOCUMENT"
+    assert result["reviewed_documents"] == 0
+    assert result["totals"]["gross_operational_revenue"] == "0.00"
+    assert result["gates"]["revenue_population_ready"] is True
+    assert result["gates"]["revenue_review_required"] is False
+    assert result["gates"]["analyst_review_required"] is False
+    assert result["gates"]["uc004_planning_authorized"] is False
+
+
 def test_uc003b_keeps_mixed_cfop_document_pending(tmp_path: Path) -> None:
     folder = make_folder(tmp_path, "mixed-revenue", document_families=["NFE"])
     key = access_key(COMPANY, "55", 97)

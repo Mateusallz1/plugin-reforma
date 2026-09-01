@@ -50,6 +50,6 @@ Somente linhas `APROVADO` substituem classificação automática. Referência de
 - `revenue_review_required`;
 - `cfop_classification_complete`;
 - `document_item_totals_explained`;
-- `revenue_population_ready`;
+- `revenue_population_ready`: a apuração de receita foi concluída sem pendência de CFOP nem diferença inexplicada. Uma competência sem documento de saída apura zero e satisfaz o gate; zero é valor apurado, não população ausente;
 - `analyst_review_required`;
 - `uc004_planning_authorized`, sempre falso nesta fase.

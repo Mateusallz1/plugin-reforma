@@ -325,7 +325,7 @@ def review_acquisitions_folder(
         "review_id": review_id,
         "content_analysis_id": content_summary["content_analysis_id"],
         "status": (
-            "ACQUISITION_REVIEW_NO_MOVEMENT"
+            "ACQUISITION_REVIEW_NO_DOCUMENT"
             if not acquisition_records
             else "ACQUISITION_REVIEW_READY_WITH_PENDING"
             if pending_records or legal_pending
@@ -396,7 +396,7 @@ def _markdown_report(result: dict[str, Any]) -> str:
                 f"| `{category}` | {count} | {result['category_amounts'][category]} |"
             )
     else:
-        lines.append("| `SEM_MOVIMENTACAO` | 0 | 0.00 |")
+        lines.append("| `SEM_DOCUMENTO` | 0 | 0.00 |")
     lines.extend(
         [
             "",

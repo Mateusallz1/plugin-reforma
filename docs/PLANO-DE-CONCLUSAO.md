@@ -8,11 +8,11 @@
 - Motor compartilhado em `engine/`, com bootstrap central em `scripts/invoke-engine.ps1`.
 - Skills no fonte: `planejar-reforma-tributaria` como porta de entrada, `uv` para manutenção e as skills operacionais de UC-001 a UC-003C.
 - UC-001: NF-e, NFC-e, NFS-e ABRASF e CT-e modelo 57.
-- Esquema de saída UC-001: `1.8.0`, com política de relatório, autorização por escopo e oito grupos operacionais.
+- Esquema de saída UC-001: `1.9.0`, com política de relatório, autorização por escopo e oito grupos operacionais.
 - Homologação real: 130 documentos incluídos, três escopos `READY`, sem bloqueadores.
 - UC-002: extração normalizada de produtos, serviços e transportes somente nos grupos operacionais autorizados.
 - Homologação real do UC-002: 130 documentos selecionados, 204 registros, 25 componentes, 44 NF-e reconciliadas e nenhum bloqueador de extração.
-- Testes: 63 aprovados, incluindo regressões de hash de conteúdo, coerência das saídas, fechamento SQLite e retomada de aprovações preparadas; Ruff, formatação e lock do `uv` aprovados.
+- Testes: 67 aprovados, incluindo ausência de movimento, migração de schemas, regressões de hash de conteúdo, coerência das saídas, fechamento SQLite e retomada de aprovações preparadas; Ruff, formatação e lock do `uv` aprovados.
 
 ## Concluído
 
@@ -20,7 +20,7 @@
 - [x] Inclusão de NFS-e ABRASF consolidada, prestadas e tomadas.
 - [x] Inclusão de CT-e modelo 57 e DACTE.
 - [x] Separação por modelo e direção.
-- [x] Estados `SEM_MOVIMENTACAO` e `MOVIMENTACAO_RESTRITA`.
+- [x] Estados `SEM_DOCUMENTO` e `DOCUMENTO_RESTRITO`.
 - [x] Autorizações independentes para `NFE_NFCE`, `NFSE` e `CTE`.
 - [x] Fast path operacional.
 - [x] Retirada do MCP e da skill legada das rotas ativas.
@@ -48,7 +48,7 @@
 - [x] Fila conversacional da carteira com agrupamento, SQLite local, alcance explícito, reaplicação e exportação opcional.
 - [x] Processamento incremental de várias competências, com paralelismo limitado, isolamento de falhas e retomada por manifesto local.
 
-A homologação real da política `COMPLEMENTARY` preservou 130 documentos incluídos e `planning_authorized=true`; sem relatório disponível, `reconciliation_ready=false` e 130 ocorrências `XML_WITHOUT_REPORT` permaneceram como avisos. O UC-002 consumiu o schema 1.8.0 sem regressão e manteve 204 registros elegíveis para o UC-003.
+A homologação real da política `COMPLEMENTARY` preservou 130 documentos incluídos e `planning_authorized=true`; sem relatório disponível, `reconciliation_ready=false` e 130 ocorrências `XML_WITHOUT_REPORT` permaneceram como avisos. O UC-002 consumiu o schema 1.1.0 sem regressão e manteve 204 registros elegíveis para o UC-003.
 
 ## Ajustes desta fase
 
@@ -124,6 +124,8 @@ O comando `planning-status` lê os artefatos existentes sem refazer etapas concl
 
 A skill `planejar-reforma-tributaria` usa esse estado como porta de entrada. Ela executa cada ação automática no máximo uma vez por rodada, reavalia o status e interrompe somente diante de entrada indispensável, falha operacional ou funcionalidade ainda não implementada. A resposta padrão evita códigos e gates técnicos e apresenta situação, concluído, achados, necessidade, motivo, continuidade e próximo passo.
 
+O estado também publica um `documentary_summary` agregado e pseudonimizado. O relatório mostra, antes da consolidação, a cobertura documental, entradas e saídas, tipos de documento, populações de produtos/serviços/transportes, valores operacionais, receitas documentais e eventual conciliação com o PGDAS-D. Valores indisponíveis permanecem como não apurados; o resumo não antecipa natureza econômica, receita tributável, crédito ou débito.
+
 ### 10. Revisão conversacional da carteira — concluída em 2026-08-31
 
 A skill `revisar-carteira-aquisicoes` recebe uma raiz explicitamente indicada, consolida as filas de aquisições e agrupa ocorrências por assinatura determinística. O analista aprova pela conversa escolhendo natureza, responsável e alcance `ITEM`, `COMPANY` ou `PORTFOLIO`.
@@ -173,5 +175,5 @@ Esses itens não devem reintroduzir o MCP como autoridade paralela.
 - não copiar XML, PDF, XLSX, CSV real ou credenciais para o repositório;
 - não forçar push ou reescrever `main`;
 - não tratar validação local como consulta oficial;
-- não criar análises operacionais para grupos `SEM_MOVIMENTACAO`;
+- não criar análises operacionais para grupos `SEM_DOCUMENTO`;
 - não iniciar novas migrações antes de concluir os itens 1–3.

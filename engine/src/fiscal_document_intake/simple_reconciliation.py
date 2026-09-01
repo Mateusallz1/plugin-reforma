@@ -14,11 +14,13 @@ from typing import Any
 from pypdf import PdfReader
 
 from .core import ValidationError
+from .revenue import REVENUE_SCHEMA_VERSION
 
 SIMPLE_RECONCILIATION_SCHEMA = (
     "br.com.planejamento-reforma-tributaria/simple-revenue-reconciliation"
 )
-SIMPLE_RECONCILIATION_SCHEMA_VERSION = "1.0.0"
+SIMPLE_RECONCILIATION_SCHEMA_VERSION = "1.1.0"
+RECONCILED_STATUSES = frozenset({"RECONCILED", "NO_MOVEMENT"})
 MONEY_PATTERN = re.compile(r"\d{1,3}(?:\.\d{3})*,\d{2}")
 
 
@@ -279,6 +281,8 @@ def _documentary_activities(revenue_summary: dict[str, Any]) -> dict[str, str]:
 def _status(declared: Decimal, documentary: Decimal | None) -> str:
     if documentary is None:
         return "ESTABLISHMENT_DOCUMENTS_MISSING"
+    if declared == 0 and documentary == 0:
+        return "NO_MOVEMENT"
     if declared == documentary:
         return "RECONCILED"
     if declared > 0 and documentary == 0:
@@ -303,8 +307,11 @@ def reconcile_simple_revenue(
     if (
         revenue_summary.get("use_case") != "UC-003"
         or revenue_summary.get("phase") != "REVENUE_REVIEW"
+        or revenue_summary.get("schema_version") != REVENUE_SCHEMA_VERSION
     ):
-        raise ValidationError("UC-003C exige saída coerente da revisão de receitas")
+        raise ValidationError(
+            "UC-003C exige saída da revisão de receitas na versão vigente"
+        )
     if not revenue_summary.get("gates", {}).get("revenue_population_ready"):
         raise ValidationError("A população de receitas do UC-003B não está pronta")
 
@@ -361,7 +368,7 @@ def reconcile_simple_revenue(
     ]
     missing_establishments = sorted(declared_refs - {documentary_ref})
     documentary_scope_reconciled = all(
-        record["status"] == "RECONCILED" for record in matched_records
+        record["status"] in RECONCILED_STATUSES for record in matched_records
     )
     group_coverage_complete = not missing_establishments
     analyst_review_required = (
@@ -415,7 +422,7 @@ def reconcile_simple_revenue(
     warnings.extend(
         {"code": record["status"], "ref": record["establishment_ref"]}
         for record in matched_records
-        if record["status"] != "RECONCILED"
+        if record["status"] not in RECONCILED_STATUSES
     )
 
     return {
@@ -537,7 +544,7 @@ def _queue(records: list[dict[str, Any]]) -> str:
     )
     writer.writeheader()
     for record in records:
-        if record["status"] == "RECONCILED":
+        if record["status"] in RECONCILED_STATUSES:
             continue
         writer.writerow(
             {

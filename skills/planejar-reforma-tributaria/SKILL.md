@@ -35,12 +35,27 @@ Quando a pendência for a classificação das aquisições, não exija planilha.
 Responda sempre nesta ordem e em linguagem comum:
 
 1. **Situação atual**
-2. **O que foi concluído**
-3. **O que foi encontrado**
-4. **Preciso de você**
-5. **Por que é necessário**
-6. **O que pode continuar**
-7. **Próximo passo**
+2. **Resumo documental preliminar**
+3. **O que foi concluído**
+4. **O que foi encontrado**
+5. **Preciso de você**
+6. **Por que é necessário**
+7. **O que pode continuar**
+8. **Próximo passo**
+
+O resumo preliminar deve aparecer sempre que houver dados de uma etapa concluída,
+mesmo que outra frente esteja pendente ou bloqueada. Mostre, quando apurados,
+quantidades e valores de documentos válidos por entrada/saída e por tipo (NF-e,
+NFC-e, NFS-e e CT-e), produtos/serviços/transportes extraídos, categorias
+operacionais de aquisições, receitas documentais por componente e a conciliação
+com o PGDAS-D. Use “não apurado” quando a fonte ainda não existir; não transforme
+ausência de documentos em zero movimento.
+
+Identifique o resumo como evidência observada, parcial ou pendente. A natureza
+econômica das aquisições continua dependendo do analista, e valores documentais
+não devem ser apresentados como receita tributável, crédito ou débito. Não inclua
+descrições comerciais, CNPJ, CPF, chaves fiscais ou outros identificadores no
+resumo exibido na conversa.
 
 Não apresente códigos, nomes de gates, hashes ou pastas de saída, salvo se o usuário pedir detalhes técnicos. Explique claramente se a pendência bloqueia apenas um estabelecimento, uma frente de análise ou todo o planejamento.
 

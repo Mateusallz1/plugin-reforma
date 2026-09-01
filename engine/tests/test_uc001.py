@@ -344,7 +344,7 @@ def test_ready_end_to_end_csv_is_deterministic_and_private(tmp_path: Path) -> No
 
     assert first == second
     assert first["status"] == "DOCUMENT_BASE_READY"
-    assert first["schema_version"] == "1.8.0"
+    assert first["schema_version"] == "1.9.0"
     assert first["scope"]["report_population_policy"] == "COMPLEMENTARY"
     assert first["reconciliation"]["population_policy"] == "COMPLEMENTARY"
     assert first["gates"]["planning_authorized"] is True
@@ -352,8 +352,8 @@ def test_ready_end_to_end_csv_is_deterministic_and_private(tmp_path: Path) -> No
     assert first["documents"]["analysis_groups"]["NFE_ENTRADAS"]["count"] == 1
     assert first["documents"]["analysis_groups"]["NFCE_SAIDAS"]["count"] == 1
     assert (
-        first["documents"]["analysis_groups"]["NFE_SAIDAS"]["movement_status"]
-        == "SEM_MOVIMENTACAO"
+        first["documents"]["analysis_groups"]["NFE_SAIDAS"]["document_status"]
+        == "SEM_DOCUMENTO"
     )
     assert (
         first["documents"]["analysis_groups"]["NFE_SAIDAS"][
@@ -659,7 +659,7 @@ def test_raw_nfse_abrasf_consolidated_documents_and_pdfs(tmp_path: Path) -> None
         "direction": "SAIDA",
         "analysis_scope": "NFSE",
         "authorized": True,
-        "movement_status": "COM_MOVIMENTACAO",
+        "document_status": "COM_DOCUMENTO",
         "operational_analysis_required": True,
         "document_types": ["NFSE"],
         "detected_count": 2,
@@ -671,7 +671,7 @@ def test_raw_nfse_abrasf_consolidated_documents_and_pdfs(tmp_path: Path) -> None
         "direction": "ENTRADA",
         "analysis_scope": "NFSE",
         "authorized": True,
-        "movement_status": "COM_MOVIMENTACAO",
+        "document_status": "COM_DOCUMENTO",
         "operational_analysis_required": True,
         "document_types": ["NFSE"],
         "detected_count": 1,
@@ -720,7 +720,7 @@ def test_raw_cte_model_57_validates_taker_and_dacte(tmp_path: Path) -> None:
         "direction": "ENTRADA",
         "analysis_scope": "CTE",
         "authorized": True,
-        "movement_status": "COM_MOVIMENTACAO",
+        "document_status": "COM_DOCUMENTO",
         "operational_analysis_required": True,
         "document_types": ["CTE"],
         "detected_count": 1,
@@ -789,7 +789,7 @@ def test_scope_authorization_allows_ready_nfse_when_nfe_scope_is_blocked(
     assert records["NFSE"]["authorized_for_planning"] is True
     assert records["NFE"]["authorized_for_planning"] is False
     restricted_group = result["documents"]["analysis_groups"]["NFE_SAIDAS"]
-    assert restricted_group["movement_status"] == "MOVIMENTACAO_RESTRITA"
+    assert restricted_group["document_status"] == "DOCUMENTO_RESTRITO"
     assert restricted_group["detected_count"] == 1
     assert restricted_group["operational_analysis_required"] is False
     assert main(["validate", str(folder)]) == 0
@@ -851,7 +851,7 @@ def test_analysis_groups_separate_nfe_nfce_and_nfse(tmp_path: Path) -> None:
     }
     assert groups["NFE_ENTRADAS"]["operational_analysis_required"] is True
     assert groups["NFCE_ENTRADAS"]["operational_analysis_required"] is False
-    assert groups["NFCE_ENTRADAS"]["movement_status"] == "SEM_MOVIMENTACAO"
+    assert groups["NFCE_ENTRADAS"]["document_status"] == "SEM_DOCUMENTO"
     _, report_path = write_outputs(result, folder / "03_SAIDAS")
     report = report_path.read_text(encoding="utf-8")
     assert "## Separação operacional para análise futura" in report

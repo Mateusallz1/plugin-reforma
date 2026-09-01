@@ -5,7 +5,7 @@ description: Concilia a receita documental pronta do UC-003B com a declaração 
 
 # Conciliar faturamento do Simples
 
-Execute o UC-003C somente quando `06_REVISAO_RECEITAS/revenue-summary.json` indicar `revenue_population_ready=true` e o analista fornecer explicitamente a pasta dos PDFs do PGDAS-D da mesma competência.
+Execute o UC-003C somente quando `06_REVISAO_RECEITAS/revenue-summary.json` indicar `revenue_population_ready=true` e o analista fornecer explicitamente a pasta dos PDFs do PGDAS-D da mesma competência. Receita documental igual a zero é população válida: competência sem nota fiscal deve ser conciliada, não pulada.
 
 ## Caminho rápido
 
@@ -20,6 +20,7 @@ Execute o UC-003C somente quando `06_REVISAO_RECEITAS/revenue-summary.json` indi
 - Use a declaração oficial PGDAS-D como autoridade dos valores declarados. Recibo e extrato confirmam a transmissão; DAS gerado não comprova pagamento; relatórios do sistema contábil são auxiliares.
 - Concilie primeiro por estabelecimento e atividade. Não compare o total consolidado de matriz e filiais com uma base documental de apenas um estabelecimento.
 - `PARTIAL_GROUP_COVERAGE` exige documentos dos estabelecimentos ausentes, mas não transforma a receita descoberta em não emissão.
+- Ausência de documento nunca é ausência de movimento. `NO_MOVEMENT` só pode ser afirmado quando documentação e declaração são zero; declaração positiva sem documento é `DECLARED_WITHOUT_DOCUMENT_SUPPORT`.
 - `DECLARED_WITHOUT_DOCUMENT_SUPPORT` significa somente que o suporte não foi localizado na base fornecida. Registre `NON_ISSUANCE_CONFIRMED` apenas após decisão expressa e evidenciada do analista em evolução própria desse contrato.
 - Preserve valores e registros detalhados em `simple-reconciliation-items.local.jsonl` e `fila-conciliacao-simples.csv`. Não reproduza CNPJ, CPF, recibo, autenticação, IP, certificado ou conteúdo integral dos PDFs na conversa.
 - Diferenças por dedução, devolução, caixa, competência ou declaração retificadora permanecem pendentes até evidência e revisão humana.

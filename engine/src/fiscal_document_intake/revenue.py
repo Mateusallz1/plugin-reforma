@@ -15,7 +15,7 @@ from typing import Any
 from .core import ValidationError, _format_decimal, _parse_decimal
 
 REVENUE_SCHEMA = "br.com.planejamento-reforma-tributaria/revenue-review"
-REVENUE_SCHEMA_VERSION = "1.0.0"
+REVENUE_SCHEMA_VERSION = "1.1.0"
 DECISION_FILE = Path("00_CONTROLE") / "classificacao-receitas.csv"
 PENDING_CLASSES = {
     "INVALID_CFOP_PENDING",
@@ -454,7 +454,7 @@ def review_revenue_folder(
         "validation_id": validation["validation_id"],
         "content_analysis_id": content_summary["content_analysis_id"],
         "status": (
-            "REVENUE_REVIEW_NO_MOVEMENT"
+            "REVENUE_REVIEW_NO_DOCUMENT"
             if not revenue_records
             else "REVENUE_REVIEW_READY_WITH_PENDING"
             if pending or unexplained
@@ -497,9 +497,7 @@ def review_revenue_folder(
             "revenue_review_required": bool(revenue_records),
             "cfop_classification_complete": not pending,
             "document_item_totals_explained": not unexplained,
-            "revenue_population_ready": bool(revenue_records)
-            and not pending
-            and not unexplained,
+            "revenue_population_ready": not pending and not unexplained,
             "analyst_review_required": bool(pending or unexplained),
             "uc004_planning_authorized": False,
         },

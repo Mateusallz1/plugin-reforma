@@ -9,18 +9,40 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .acquisition import review_acquisitions_folder, write_acquisition_outputs
-from .content import extract_content_folder, write_content_outputs
-from .core import ValidationError, _parse_xml_file, validate_folder, write_outputs
-from .planning_status import evaluate_planning_status, write_planning_status_outputs
+from .acquisition import (
+    ACQUISITION_SCHEMA_VERSION,
+    review_acquisitions_folder,
+    write_acquisition_outputs,
+)
+from .content import (
+    CONTENT_SCHEMA_VERSION,
+    extract_content_folder,
+    write_content_outputs,
+)
+from .core import (
+    DOCUMENT_SCHEMA_VERSION,
+    ValidationError,
+    _parse_xml_file,
+    validate_folder,
+    write_outputs,
+)
+from .planning_status import (
+    PLANNING_STATUS_SCHEMA_VERSION,
+    evaluate_planning_status,
+    write_planning_status_outputs,
+)
 from .portfolio_review import review_portfolio
-from .revenue import review_revenue_folder, write_revenue_outputs
+from .revenue import (
+    REVENUE_SCHEMA_VERSION,
+    review_revenue_folder,
+    write_revenue_outputs,
+)
 from .simple_reconciliation import (
     reconcile_simple_revenue,
     write_simple_reconciliation_outputs,
 )
 
-BATCH_SCHEMA_VERSION = "1.1.0"
+BATCH_SCHEMA_VERSION = "1.2.0"
 STATE_FOLDER = ".reforma-tributaria"
 MANIFEST_FILE = "processamento-lote-manifest.json"
 CONFIG_FILE = "configuracao-lote.local.json"
@@ -271,16 +293,22 @@ def _outputs_coherent(folder: Path) -> bool:
         return False
     if not all((validation, content, acquisition, revenue, planning)):
         return False
-    if validation.get("use_case") != "UC-001" or not validation.get("validation_id"):
+    if (
+        validation.get("use_case") != "UC-001"
+        or validation.get("schema_version") != DOCUMENT_SCHEMA_VERSION
+        or not validation.get("validation_id")
+    ):
         return False
     if (
         content.get("use_case") != "UC-002"
+        or content.get("schema_version") != CONTENT_SCHEMA_VERSION
         or content.get("validation_id") != validation.get("validation_id")
         or not content.get("content_analysis_id")
     ):
         return False
     if (
         acquisition.get("use_case") != "UC-003"
+        or acquisition.get("schema_version") != ACQUISITION_SCHEMA_VERSION
         or acquisition.get("phase") != "ACQUISITION_REVIEW"
         or acquisition.get("content_analysis_id") != content.get("content_analysis_id")
         or not acquisition.get("review_id")
@@ -288,6 +316,7 @@ def _outputs_coherent(folder: Path) -> bool:
         return False
     if (
         revenue.get("use_case") != "UC-003"
+        or revenue.get("schema_version") != REVENUE_SCHEMA_VERSION
         or revenue.get("phase") != "REVENUE_REVIEW"
         or revenue.get("validation_id") != validation.get("validation_id")
         or revenue.get("content_analysis_id") != content.get("content_analysis_id")
@@ -296,6 +325,7 @@ def _outputs_coherent(folder: Path) -> bool:
         return False
     return (
         planning.get("use_case") == "PLANNING_COORDINATION"
+        and planning.get("schema_version") == PLANNING_STATUS_SCHEMA_VERSION
         and bool(planning.get("state_id"))
         and {
             "DOCUMENT_VALIDATION",

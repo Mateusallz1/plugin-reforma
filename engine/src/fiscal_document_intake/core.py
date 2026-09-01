@@ -26,6 +26,7 @@ MAX_XML_BYTES = 10 * 1024 * 1024
 MAX_PDF_FILES = 5_000
 MAX_PDF_BYTES = 50 * 1024 * 1024
 MAX_PDF_PAGES = 500
+DOCUMENT_SCHEMA_VERSION = "1.9.0"
 RAW_IGNORED_DIRECTORIES = {
     ".GIT",
     ".VENV",
@@ -1715,17 +1716,17 @@ def validate_folder(
         ]
         scope_authorized = analysis_scope in authorized_scopes
         if not detected_group_documents:
-            movement_status = "SEM_MOVIMENTACAO"
+            document_status = "SEM_DOCUMENTO"
         elif scope_authorized and grouped_documents:
-            movement_status = "COM_MOVIMENTACAO"
+            document_status = "COM_DOCUMENTO"
         else:
-            movement_status = "MOVIMENTACAO_RESTRITA"
+            document_status = "DOCUMENTO_RESTRITO"
         analysis_groups[code] = {
             "label": definition["label"],
             "direction": definition["direction"],
             "analysis_scope": analysis_scope,
             "authorized": scope_authorized,
-            "movement_status": movement_status,
+            "document_status": document_status,
             "operational_analysis_required": bool(grouped_documents)
             and scope_authorized,
             "document_types": list(definition["document_types"]),
@@ -1742,7 +1743,7 @@ def validate_folder(
     ]
     result = {
         "schema": "br.com.planejamento-reforma-tributaria/document-base-validation",
-        "schema_version": "1.8.0",
+        "schema_version": DOCUMENT_SCHEMA_VERSION,
         "use_case": "UC-001",
         "validation_id": validation_id,
         "status": (
@@ -1913,31 +1914,36 @@ def _markdown_report(result: dict[str, Any]) -> str:
             "|---|---|---|---|---|---:|---:|---:|",
         ]
     )
-    movement_groups = [
+    document_groups = [
         (code, group)
         for code, group in documents["analysis_groups"].items()
         if group["detected_count"] > 0
     ]
-    for code, group in movement_groups:
+    for code, group in document_groups:
         lines.append(
             f"| `{code}` | `{group['analysis_scope']}` | "
-            f"`{group['movement_status']}` | "
+            f"`{group['document_status']}` | "
             f"{'criar' if group['operational_analysis_required'] else 'não criar'} | "
             f"`{group['direction']}` | {group['detected_count']} | "
             f"{group['count']} | {group['gross_amount']} |"
         )
-    if not movement_groups:
-        lines.append("| - | - | `SEM_MOVIMENTACAO` | não criar | - | 0 | 0 | 0.00 |")
-    without_movement = [
+    if not document_groups:
+        lines.append("| - | - | `SEM_DOCUMENTO` | não criar | - | 0 | 0 | 0.00 |")
+    without_document = [
         code
         for code, group in documents["analysis_groups"].items()
-        if group["movement_status"] == "SEM_MOVIMENTACAO"
+        if group["document_status"] == "SEM_DOCUMENTO"
     ]
     lines.extend(
         [
             "",
-            "- Sem movimentação: "
-            + (", ".join(f"`{code}`" for code in without_movement) or "nenhum grupo"),
+            "- Sem documento fiscal no escopo: "
+            + (", ".join(f"`{code}`" for code in without_document) or "nenhum grupo"),
+            "",
+            (
+                "> Ausência de documento não comprova ausência de operação. "
+                "A confirmação depende da conciliação com a declaração da competência."
+            ),
         ]
     )
     lines.extend(

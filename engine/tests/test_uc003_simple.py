@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -36,16 +37,17 @@ def write_revenue_summary(
     period: str = "2026-01",
     goods: str = "100.00",
     services: str = "200.00",
+    status: str = "REVENUE_REVIEW_READY",
 ) -> None:
     target = folder / "06_REVISAO_RECEITAS"
     target.mkdir(parents=True)
     payload = {
         "schema": "br.com.planejamento-reforma-tributaria/revenue-review",
-        "schema_version": "1.0.0",
+        "schema_version": "1.1.0",
         "use_case": "UC-003",
         "phase": "REVENUE_REVIEW",
         "review_id": "REV-SYNTHETIC000001",
-        "status": "REVENUE_REVIEW_READY",
+        "status": status,
         "scope": {
             "entity_ref": "EMPRESA-SYNTHETIC",
             "establishment_ref": establishment_ref(MATRIX),
@@ -73,9 +75,14 @@ def write_pgdas_declaration(
 ) -> Path:
     folder.mkdir(parents=True)
     path = folder / "PGDASD-DECLARACAO-SINTETICA.pdf"
-    declared_total = 300
+
+    def _amount(value: str) -> Decimal:
+        return Decimal(value.replace(".", "").replace(",", "."))
+
+    total = _amount(matrix_goods) + _amount(matrix_services)
     if branch_goods is not None:
-        declared_total += int(branch_goods.split(",")[0])
+        total += _amount(branch_goods)
+    declared_total = f"{total:.2f}".replace(".", ",")
     lines = [
         "Programa Gerador do Documento de Arrecadacao do Simples Nacional - Declaratorio",
         "Declaracao Original",
@@ -83,7 +90,7 @@ def write_pgdas_declaration(
         f"CNPJ Matriz: {formatted_cnpj(MATRIX)}",
         "Regime de Apuracao: Competencia",
         "No da Declaracao: 12345678901234567",
-        f"Receita Bruta do PA (RPA) - Competencia {declared_total},00 0,00 {declared_total},00",
+        f"Receita Bruta do PA (RPA) - Competencia {declared_total} 0,00 {declared_total}",
         "2.7) Informacoes da Declaracao por Estabelecimento",
         f"CNPJ Estabelecimento: {formatted_cnpj(MATRIX)}",
         "Valor do Debito por Tributo para a Atividade (R$):",
@@ -185,6 +192,70 @@ def test_uc003c_marks_declared_revenue_without_document_support(
             ]
         )
         == 2
+    )
+
+
+def test_uc003c_reconciles_month_without_any_fiscal_document(
+    tmp_path: Path,
+) -> None:
+    """Ausência de documento não impede a conciliação: zero é valor apurado."""
+    folder = tmp_path / "company-no-documents"
+    pgdas = tmp_path / "pgdas-no-documents"
+    write_revenue_summary(
+        folder,
+        goods="0.00",
+        services="0.00",
+        status="REVENUE_REVIEW_NO_DOCUMENT",
+    )
+    write_pgdas_declaration(pgdas, branch_goods=None)
+
+    result = reconcile_simple_revenue(folder, pgdas)
+
+    assert result["status"] == "SIMPLE_REVENUE_REVIEW_REQUIRED"
+    assert result["gates"]["documentary_scope_reconciled"] is False
+    assert result["gates"]["non_issuance_confirmed"] is False
+    assert result["status_counts"] == {"DECLARED_WITHOUT_DOCUMENT_SUPPORT": 2}
+    assert result["totals"]["documentary_matched_establishment"] == "0.00"
+    assert result["totals"]["pgdas_matched_establishment"] == "300.00"
+    assert (
+        main(["reconcile-simple-revenue", str(folder), "--pgdas-folder", str(pgdas)])
+        == 2
+    )
+
+
+def test_uc003c_confirms_no_movement_only_against_the_declaration(
+    tmp_path: Path,
+) -> None:
+    """Sem documento e sem receita declarada, o não movimento é conclusão das duas fontes."""
+    folder = tmp_path / "company-idle"
+    pgdas = tmp_path / "pgdas-idle"
+    write_revenue_summary(
+        folder,
+        goods="0.00",
+        services="0.00",
+        status="REVENUE_REVIEW_NO_DOCUMENT",
+    )
+    write_pgdas_declaration(
+        pgdas, matrix_goods="0,00", matrix_services="0,00", branch_goods=None
+    )
+
+    result = reconcile_simple_revenue(folder, pgdas)
+
+    assert result["status"] == "SIMPLE_REVENUE_RECONCILED"
+    assert result["gates"]["documentary_scope_reconciled"] is True
+    assert result["gates"]["group_coverage_complete"] is True
+    assert result["gates"]["analyst_review_required"] is False
+    assert result["gates"]["non_issuance_confirmed"] is False
+    assert result["gates"]["uc004_planning_authorized"] is False
+    assert set(result["status_counts"]) == {"NO_MOVEMENT"}
+    assert result["warnings"] == []
+    written = write_simple_reconciliation_outputs(
+        result, folder / "07_CONCILIACAO_SIMPLES"
+    )
+    assert len(written[2].read_text(encoding="utf-8-sig").splitlines()) == 1
+    assert (
+        main(["reconcile-simple-revenue", str(folder), "--pgdas-folder", str(pgdas)])
+        == 0
     )
 
 

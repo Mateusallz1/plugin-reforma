@@ -48,7 +48,7 @@ O UC-001 cobre NF-e, NFC-e, NFS-e ABRASF e CT-e modelo 57. O resultado separa oi
 - `NFSE_PRESTADOS`, `NFSE_TOMADOS`;
 - `CTE_PRESTADOS`, `CTE_TOMADOS`.
 
-Cada grupo informa se há `COM_MOVIMENTACAO`, `SEM_MOVIMENTACAO` ou `MOVIMENTACAO_RESTRITA`. Só grupos com movimentação e escopo autorizado devem gerar análise operacional.
+Cada grupo informa se há `COM_DOCUMENTO`, `SEM_DOCUMENTO` ou `DOCUMENTO_RESTRITO`. Só grupos com documento e escopo autorizado devem gerar análise operacional; `SEM_DOCUMENTO` não conclui ausência de operação.
 
 Relatórios CSV/XLSX usam a política `COMPLEMENTARY`: conciliam população, situação e valores, mas não filtram XMLs documentalmente válidos nem incluem notas declaradas sem XML. O campo opcional `report_population_policy` do `escopo.json` assume esse valor; `WHITELIST` permanece reservado para evolução futura.
 
