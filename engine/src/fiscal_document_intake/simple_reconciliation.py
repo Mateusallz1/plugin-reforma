@@ -176,7 +176,7 @@ def _parse_declaration(text: str, authority_ref: str) -> dict[str, Any]:
     compact = "\n".join(" ".join(line.split()) for line in normalized.splitlines())
 
     period_match = re.search(
-        r"PERIODO DE APURACAO:\s*(\d{2})/\d{2}/(\d{4})\s+A\s+\d{2}/\d{2}/\d{4}",
+        r"PERIODO DE APURACAO:\s*\d{2}/(\d{2})/(\d{4})\s+A\s+\d{2}/\d{2}/\d{4}",
         compact,
     )
     if not period_match:

@@ -29,5 +29,6 @@ Execute o UC-003 somente quando `04_CONTEUDO/content-summary.json` indicar `uc00
 - Nunca converta entrada, par válido ou natureza aprovada em direito automático a crédito.
 - Preserve registros restritos pelo UC-002 como `RESTRICTED_INPUT`.
 - Mantenha dados comerciais detalhados apenas em `acquisition-items.local.jsonl` e `fila-revisao-aquisicoes.csv`.
+- Quando houver várias empresas, encaminhe a aprovação para `revisar-carteira-aquisicoes`; a skill central materializa decisões compatíveis no mesmo arquivo local consumido por este fluxo.
 
 Leia [references/uc-003.md](references/uc-003.md) para explicar entradas, saídas ou gates. Leia [references/fontes-oficiais.md](references/fontes-oficiais.md) quando precisar explicar atualização, vigência ou o `ruleset-lock`.

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Revisar Carteira de Aquisições"
+  short_description: "Aprova pendências repetidas em várias empresas"
+  default_prompt: "Use $revisar-carteira-aquisicoes para consolidar e revisar as pendências da carteira informada."
+policy:
+  allow_implicit_invocation: true

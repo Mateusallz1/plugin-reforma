@@ -143,6 +143,24 @@ def test_uc002_requires_uc001_authorization(tmp_path: Path) -> None:
         extract_content_folder(folder)
 
 
+def test_uc002_ignores_duplicate_document_representations(tmp_path: Path) -> None:
+    folder = make_folder(
+        tmp_path,
+        "duplicate-nfse",
+        document_families=["NFSE"],
+    )
+    content = nfse_xml([("7101", "VERIF-DUPLICATE", COMPANY, OTHER, "200.00", "1")])
+    (folder / "01_XML" / "first.xml").write_text(content, encoding="utf-8")
+    (folder / "01_XML" / "duplicate.xml").write_text(content, encoding="utf-8")
+    validation = validate_folder(folder)
+    write_outputs(validation, folder / "03_SAIDAS")
+
+    result = extract_content_folder(folder)
+
+    assert result["records_total"] == 1
+    assert result["record_kind_counts"] == {"SERVICE": 1}
+
+
 def test_uc002_observes_product_total_mismatch_without_blocking(tmp_path: Path) -> None:
     folder = make_folder(tmp_path, "content-mismatch", document_families=["NFE"])
     key = access_key(COMPANY, "55", 73)

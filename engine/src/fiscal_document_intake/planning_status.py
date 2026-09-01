@@ -290,7 +290,7 @@ def evaluate_planning_status(
                     "As naturezas das compras dependem da finalidade econômica confirmada pelo analista.",
                     scope="ACQUISITION_PLANNING",
                     accepted_sources=[
-                        "planilha de classificação das aquisições preenchida e aprovada pelo analista"
+                        "aprovação na fila central da carteira ou classificação local aprovada pelo analista"
                     ],
                 )
             )

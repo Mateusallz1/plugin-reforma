@@ -699,6 +699,7 @@ def extract_content_folder(folder: Path | str) -> dict[str, Any]:
             document
             for document in parsed_documents
             if document["document_ref"] in authorized_records
+            and document["document_ref"] not in matched_document_refs
         ]
         if not selected_documents:
             continue

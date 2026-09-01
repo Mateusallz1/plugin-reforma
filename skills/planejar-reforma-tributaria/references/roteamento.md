@@ -14,7 +14,7 @@ Execute as ações somente dentro da pasta empresarial indicada. Depois de cada 
 
 - `RESOLVE_DOCUMENTARY_BLOCKERS`: peça os documentos corrigidos ou complementares apontados no relatório, sem pedir uma pasta “limpa”.
 - `RESOLVE_CONTENT_RESTRICTIONS`: explique quais tipos de item foram restringidos e qual evidência pode corrigi-los.
-- `APPROVE_ACQUISITION_CLASSIFICATIONS`: entregue a fila ao analista e peça a classificação econômica das compras.
+- `APPROVE_ACQUISITION_CLASSIFICATIONS`: ofereça a fila central da carteira; use a fila local da empresa apenas quando o analista preferir revisão isolada.
 - `REVIEW_REVENUE_DIFFERENCES`: peça revisão apenas dos documentos ou valores pendentes.
 - `PROVIDE_PGDAS_FOLDER`: peça a pasta que contém a declaração PGDAS-D da competência; recibo e extrato são complementares.
 - `REVIEW_SIMPLE_REVENUE_DIFFERENCES`: peça evidência para as diferenças, sem afirmar omissão ou não emissão.

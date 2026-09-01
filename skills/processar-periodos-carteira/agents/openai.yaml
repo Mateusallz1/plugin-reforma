@@ -1,0 +1,6 @@
+interface:
+  display_name: "Processar Períodos da Carteira"
+  short_description: "Executa vários meses sem repetir trabalho"
+  default_prompt: "Use $processar-periodos-carteira para processar todas as competências fiscais da pasta informada."
+policy:
+  allow_implicit_invocation: true

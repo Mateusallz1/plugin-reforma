@@ -11,8 +11,9 @@ Esta é a porta de entrada do plugin. O usuário não precisa conhecer UCs, cód
 
 1. Se ainda não houver uma pasta, peça somente a pasta do estabelecimento e da competência que será analisada.
 2. Use exclusivamente a raiz indicada. Não procure empresas, filiais ou competências em diretórios vizinhos.
-3. Execute `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-planning-status.ps1 -Folder <pasta>`. Acrescente `-PgdasFolder <pasta PGDAS-D>` somente quando o usuário já a tiver indicado.
-4. Leia `08_STATUS_PLANEJAMENTO/planning-status.json` e `relatorio-status-planejamento.md`.
+3. Quando a pasta indicada representar uma carteira com vários estabelecimentos ou competências, use `processar-periodos-carteira` em vez de repetir este fluxo mês a mês.
+4. Para uma única competência, execute `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-planning-status.ps1 -Folder <pasta>`. Acrescente `-PgdasFolder <pasta PGDAS-D>` somente quando o usuário já a tiver indicado.
+5. Leia `08_STATUS_PLANEJAMENTO/planning-status.json` e `relatorio-status-planejamento.md`.
 
 ## Continuação automática
 
@@ -26,6 +27,8 @@ Pare quando:
 - a próxima etapa ainda não estiver implementada;
 - ocorrer falha operacional;
 - uma nova execução repetiria uma ação já tentada nesta rodada.
+
+Quando a pendência for a classificação das aquisições, não exija planilha. Informe que o analista pode consolidar várias empresas pela skill `revisar-carteira-aquisicoes`. Peça a raiz da carteira somente se ele quiser usar esse fluxo; nunca deduza a raiz procurando diretórios vizinhos.
 
 ## Resposta ao usuário
 

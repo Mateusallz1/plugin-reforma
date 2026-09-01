@@ -2,7 +2,7 @@
 
 ## Autoridade atual
 
-- A porta de entrada para o usuário é `planejar-reforma-tributaria`. Ela consulta `planning-status`, executa as próximas ações autorizadas e apresenta somente o que foi concluído, o que falta, o impacto e a próxima ação. As skills UC-001 a UC-003C permanecem como componentes operacionais.
+- A porta de entrada para uma empresa e uma competência é `planejar-reforma-tributaria`. Para várias competências, `processar-periodos-carteira` executa o lote incremental. Para a revisão central, `revisar-carteira-aquisicoes` consolida pendências e registra aprovações com alcance explícito. As skills UC-001 a UC-003C permanecem como componentes operacionais.
 - A validação documental grava `validation-result.json` e `relatorio-prontidao-documental.md` na pasta do cliente.
 - As etapas gravam artefatos em `03_SAIDAS/`, `04_CONTEUDO/`, `05_REVISAO_AQUISICOES/`, `06_REVISAO_RECEITAS/`, `07_CONCILIACAO_SIMPLES/` e `08_STATUS_PLANEJAMENTO/`. Arquivos `*.local.jsonl` contêm detalhes comerciais e devem permanecer locais e restritos.
 - O motor compartilhado fica em `engine/`; `scripts/invoke-engine.ps1` é a única autoridade para preparar o ambiente `uv` e executar o CLI.
@@ -22,7 +22,9 @@
 - Observações do UC-002 não impedem o UC-003; use `uc003_analysis_authorized` como gate operacional e preserve `lcp214_classification_ready` apenas como indicador de completude.
 - Produto com NCM ausente/malformado ou divergente de catálogo `APROVADO` fica restrito por item; não bloqueie serviços, transportes ou outros produtos elegíveis.
 - Sem catálogo Produto × NCM ou sem correspondência por `cProd`, registre inconclusão e permita avanço provisório. Não confirme incompatibilidade por similaridade textual.
-- O UC-003 revisa somente entradas e não infere natureza econômica ou direito a crédito. Decisões exigem `status=APROVADO` no arquivo local do analista.
+- O UC-003 revisa somente entradas e não infere natureza econômica ou direito a crédito. Decisões exigem `status=APROVADO` no arquivo local do analista; a fila central pode materializar esse arquivo a partir de uma aprovação humana registrada em SQLite local.
+- A fila central usa somente a raiz de carteira indicada pelo usuário. `ITEM`, `COMPANY` e `PORTFOLIO` são alcances distintos; nunca escolha ou amplie `PORTFOLIO` silenciosamente.
+- O lote mantém cada estabelecimento e competência isolados. O manifesto local deve reaproveitar períodos sem mudança, continuar diante de falha parcial e reprocessar somente entradas alteradas ou quando `force` for explicitamente solicitado.
 - Antes de usar a tabela CST/cClassTrib, confira a publicação oficial atual. Divergência de versão exige manutenção explícita do snapshot e nova bateria de testes.
 - A revisão de receitas usa o total do documento, direção e CFOP. CFOP de venda em entrada continua sendo compra; remessa, retorno, anulação e devolução de compra ficam fora da receita operacional.
 - Checklist do analista complementa a tabela CFOP oficial e não é exaustivo. `ind_excluded_ibs_cbs` não equivale sozinho a operação sem receita.
@@ -52,7 +54,7 @@ Antes de empacotar, valide as skills e o plugin com os validadores oficiais. Dep
 
 ## Ordem de trabalho pendente
 
-Leia [docs/PLANO-DE-CONCLUSAO.md](docs/PLANO-DE-CONCLUSAO.md) antes de iniciar uma nova alteração. O próximo incremento funcional é o UC-003: aplicar regras versionadas da LC 214 sobre a população normalizada, mantendo evidência, vigência e aprovação do analista separadas da extração.
+Leia [docs/PLANO-DE-CONCLUSAO.md](docs/PLANO-DE-CONCLUSAO.md) antes de iniciar uma nova alteração. Depois de homologar a fila central e o lote incremental, o próximo incremento funcional é aplicar regras versionadas da LC 214 sobre a população normalizada, mantendo evidência, vigência e aprovação do analista separadas da extração.
 
 ## Git e mudanças externas
 

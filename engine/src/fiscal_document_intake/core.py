@@ -234,14 +234,8 @@ def _raw_files(folder: Path, suffix: str) -> list[Path]:
     return paths
 
 
-def _load_scope(folder: Path) -> dict[str, Any]:
-    path = folder / "00_CONTROLE" / "escopo.json"
-    if not path.is_file():
-        raise ValidationError("Arquivo obrigatório ausente: 00_CONTROLE/escopo.json")
-    try:
-        scope = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise ValidationError("escopo.json deve ser JSON UTF-8 válido") from error
+def _validate_scope(scope: dict[str, Any], *, input_mode: str) -> dict[str, Any]:
+    scope = dict(scope)
     if scope.get("schema_version") != "1.0":
         raise ValidationError("schema_version do escopo deve ser 1.0")
     for field in ("entity_ref", "establishment_ref", "period", "analysis_cutoff"):
@@ -283,8 +277,21 @@ def _load_scope(folder: Path) -> dict[str, Any]:
         datetime.fromisoformat(scope["analysis_cutoff"])
     except ValueError as error:
         raise ValidationError("analysis_cutoff deve usar data/hora ISO") from error
-    scope["input_mode"] = "STRUCTURED"
+    scope["input_mode"] = input_mode
     return scope
+
+
+def _load_scope(folder: Path) -> dict[str, Any]:
+    path = folder / "00_CONTROLE" / "escopo.json"
+    if not path.is_file():
+        raise ValidationError("Arquivo obrigatório ausente: 00_CONTROLE/escopo.json")
+    try:
+        scope = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValidationError("escopo.json deve ser JSON UTF-8 válido") from error
+    if not isinstance(scope, dict):
+        raise ValidationError("escopo.json deve conter um objeto JSON")
+    return _validate_scope(scope, input_mode="STRUCTURED")
 
 
 def _discover_scope(
@@ -1461,7 +1468,9 @@ def _build_scope_authorizations(
     return authorizations, authorized_scopes, sorted(set(restricted_scopes))
 
 
-def validate_folder(folder: Path | str) -> dict[str, Any]:
+def validate_folder(
+    folder: Path | str, scope_override: dict[str, Any] | None = None
+) -> dict[str, Any]:
     base = Path(folder).expanduser().resolve()
     if not base.is_dir():
         raise ValidationError("A pasta informada não existe")
@@ -1469,14 +1478,22 @@ def validate_folder(folder: Path | str) -> dict[str, Any]:
         base / "01_XML"
     ).is_dir()
     if structured_input:
-        scope: dict[str, Any] | None = _load_scope(base)
         xml_dir = base / "01_XML"
         xml_paths = _safe_relative_files(xml_dir, "*.xml")
         pdf_paths = _safe_relative_files(xml_dir, "*.pdf")
     else:
-        scope = None
         xml_paths = _raw_files(base, ".xml")
         pdf_paths = _raw_files(base, ".pdf")
+    if scope_override is not None:
+        if not isinstance(scope_override, dict):
+            raise ValidationError("O escopo informado ao lote deve ser um objeto")
+        scope: dict[str, Any] | None = _validate_scope(
+            scope_override, input_mode="BATCH_OVERRIDE"
+        )
+    elif structured_input:
+        scope = _load_scope(base)
+    else:
+        scope = None
     if not xml_paths and not structured_input:
         raise ValidationError("Nenhum XML encontrado dentro da pasta autorizada")
     if len(xml_paths) > MAX_XML_FILES:
@@ -1801,6 +1818,11 @@ def validate_folder(folder: Path | str) -> dict[str, Any]:
         "blockers": blockers,
         "warnings": warnings,
         "_private_report_context": report_identity,
+        "_private_scope_identity": {
+            "entity_ref": scope["entity_ref"],
+            "establishment_ref": scope["establishment_ref"],
+            "entity_taxpayer_ids": scope["entity_taxpayer_ids"],
+        },
         "limitations": [
             "A situação atual não foi consultada na autoridade fiscal.",
             "A assinatura digital não foi validada criptograficamente.",

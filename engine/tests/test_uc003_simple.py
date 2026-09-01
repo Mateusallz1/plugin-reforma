@@ -150,6 +150,17 @@ def test_uc003c_reconciles_matrix_and_preserves_partial_group_coverage(
     assert "12345678901234567" not in combined
 
 
+def test_uc003c_reads_month_from_period_start_date(tmp_path: Path) -> None:
+    folder = tmp_path / "company-february"
+    pgdas = tmp_path / "pgdas-february"
+    write_revenue_summary(folder, period="2026-02")
+    write_pgdas_declaration(pgdas, period="02/2026")
+
+    result = reconcile_simple_revenue(folder, pgdas)
+
+    assert result["scope"]["period"] == "2026-02"
+
+
 def test_uc003c_marks_declared_revenue_without_document_support(
     tmp_path: Path,
 ) -> None:

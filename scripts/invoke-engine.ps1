@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("validate", "extract-content", "review-acquisitions", "review-revenue", "reconcile-simple-revenue", "planning-status")]
+    [ValidateSet("validate", "extract-content", "review-acquisitions", "review-revenue", "reconcile-simple-revenue", "planning-status", "review-portfolio", "approve-portfolio-group", "export-portfolio-review", "process-portfolio-periods")]
     [string]$Command,
 
     [string[]]$CommandArguments = @()

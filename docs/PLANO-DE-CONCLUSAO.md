@@ -2,7 +2,7 @@
 
 ## Baseline atual
 
-- Plugin em desenvolvimento: `0.28.0`; a instalação ativa permanece em `0.26.0+codex.20260831141112` até o próximo commit e cachebuster.
+- Plugin fonte e instalação ativa: `0.28.0`; confira o cachebuster vigente no manifesto, sem tratá-lo como versão funcional separada.
 - Branch: `main`; confirme `git status` e `git log -1` ao retomar, sem depender de hash gravado neste documento.
 - Runtime ativo: Python/`uv`, sem servidor MCP no manifesto.
 - Motor compartilhado em `engine/`, com bootstrap central em `scripts/invoke-engine.ps1`.
@@ -12,7 +12,7 @@
 - Homologação real: 130 documentos incluídos, três escopos `READY`, sem bloqueadores.
 - UC-002: extração normalizada de produtos, serviços e transportes somente nos grupos operacionais autorizados.
 - Homologação real do UC-002: 130 documentos selecionados, 204 registros, 25 componentes, 44 NF-e reconciliadas e nenhum bloqueador de extração.
-- Testes: 44 aprovados, incluindo o coordenador user-facing; Ruff, formatação e lock do `uv` aprovados.
+- Testes: 58 aprovados, incluindo o coordenador user-facing, a revisão central da carteira, o lote incremental e seus launchers; Ruff, formatação e lock do `uv` aprovados.
 
 ## Concluído
 
@@ -45,6 +45,8 @@
 - [x] Devoluções e remessas orientadas pelos indicadores oficiais, com checklist do analista separado.
 - [x] UC-003C com parser do PGDAS-D, conciliação por estabelecimento e atividade e cobertura parcial sem presunção de não emissão.
 - [x] Coordenador `planejar-reforma-tributaria` com retomada por estado, execução automática segura e solicitações em linguagem comum.
+- [x] Fila conversacional da carteira com agrupamento, SQLite local, alcance explícito, reaplicação e exportação opcional.
+- [x] Processamento incremental de várias competências, com paralelismo limitado, isolamento de falhas e retomada por manifesto local.
 
 A homologação real da política `COMPLEMENTARY` preservou 130 documentos incluídos e `planning_authorized=true`; sem relatório disponível, `reconciliation_ready=false` e 130 ocorrências `XML_WITHOUT_REPORT` permaneceram como avisos. O UC-002 consumiu o schema 1.8.0 sem regressão e manteve 204 registros elegíveis para o UC-003.
 
@@ -122,6 +124,22 @@ O comando `planning-status` lê os artefatos existentes sem refazer etapas concl
 
 A skill `planejar-reforma-tributaria` usa esse estado como porta de entrada. Ela executa cada ação automática no máximo uma vez por rodada, reavalia o status e interrompe somente diante de entrada indispensável, falha operacional ou funcionalidade ainda não implementada. A resposta padrão evita códigos e gates técnicos e apresenta situação, concluído, achados, necessidade, motivo, continuidade e próximo passo.
 
+### 10. Revisão conversacional da carteira — concluída em 2026-08-31
+
+A skill `revisar-carteira-aquisicoes` recebe uma raiz explicitamente indicada, consolida as filas de aquisições e agrupa ocorrências por assinatura determinística. O analista aprova pela conversa escolhendo natureza, responsável e alcance `ITEM`, `COMPANY` ou `PORTFOLIO`.
+
+As decisões e a auditoria ficam em SQLite dentro da pasta local da carteira. O motor materializa as aprovações no arquivo já consumido pelo UC-003, reprocessa as empresas afetadas e reaplica regras aprovadas a novas ocorrências compatíveis. Regras mais específicas prevalecem sobre regras amplas. O CSV consolidado tornou-se exportação opcional, não autoridade operacional.
+
+Na homologação real pseudonimizada, 70 ocorrências pendentes foram consolidadas em 66 grupos, identificando quatro repetições. A listagem não aprovou nem alterou classificações e gravou somente o estado e o relatório local da carteira.
+
+### 11. Processamento incremental por competência — concluído em 2026-08-31
+
+A skill `processar-periodos-carteira` descobre competências com documentos fiscais, preserva o isolamento por estabelecimento e período e executa até dois períodos simultaneamente por padrão. O manifesto e a configuração de identidade ficam somente em `.reforma-tributaria/`, fora do plugin e do Git.
+
+Cada competência tem impressão digital das entradas, declarações e regras. Períodos sem mudança são ignorados; uma falha fica isolada e não interrompe os demais. A fila central é consolidada uma vez após o lote. A homologação também corrigiu a leitura da competência no PGDAS-D e eliminou duplicação de itens quando o mesmo documento possuía representações XML repetidas.
+
+Na base real, foram descobertas 14 competências fiscais; sete pastas exclusivas do Simples foram corretamente tratadas apenas como fontes de conciliação. Na retomada final, oito períodos foram processados em 85,384 segundos e seis já concluídos foram reaproveitados, sem falhas. A execução seguinte reaproveitou os 14 períodos em 0,310 segundo no motor e 1,622 segundo de ponta a ponta. A fila central resultante contém 240 grupos para revisão humana, sem aprovação automática.
+
 ## Backlog condicional
 
 Só iniciar se houver necessidade real e amostras aprovadas:
@@ -144,6 +162,8 @@ Esses itens não devem reintroduzir o MCP como autoridade paralela.
 - base real reproduzível sem dados fiscais no Git;
 - README e `AGENTS.md` suficientes para retomar o trabalho em outra máquina;
 - relatório final ainda depende de homologação do analista.
+- fila central reproduzível, com isolamento de alcance e sem dados reais no Git.
+- lote de competências reproduzível, incremental e resiliente a falhas parciais.
 
 ## O que não fazer
 

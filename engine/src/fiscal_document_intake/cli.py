@@ -9,6 +9,12 @@ from .acquisition import review_acquisitions_folder, write_acquisition_outputs
 from .content import extract_content_folder, write_content_outputs
 from .core import ValidationError, validate_folder, write_outputs
 from .planning_status import evaluate_planning_status, write_planning_status_outputs
+from .portfolio_batch import process_portfolio_periods
+from .portfolio_review import (
+    approve_portfolio_group,
+    export_portfolio_review,
+    review_portfolio,
+)
 from .revenue import review_revenue_folder, write_revenue_outputs
 from .simple_reconciliation import (
     reconcile_simple_revenue,
@@ -57,6 +63,46 @@ def build_parser() -> argparse.ArgumentParser:
     planning_status.add_argument("folder", type=Path)
     planning_status.add_argument("--pgdas-folder", type=Path)
     planning_status.add_argument("--output-dir", type=Path)
+    portfolio = subparsers.add_parser(
+        "review-portfolio",
+        help="Consolidar as classificações pendentes de uma carteira local",
+    )
+    portfolio.add_argument("folder", type=Path)
+    portfolio.add_argument("--page", type=int, default=1)
+    portfolio.add_argument("--page-size", type=int, default=10)
+    portfolio.add_argument("--ruleset", type=Path)
+    approval = subparsers.add_parser(
+        "approve-portfolio-group",
+        help="Aprovar um grupo pendente com alcance explícito",
+    )
+    approval.add_argument("folder", type=Path)
+    approval.add_argument("--group-id", required=True)
+    approval.add_argument("--nature", required=True)
+    approval.add_argument(
+        "--scope", required=True, choices=["ITEM", "COMPANY", "PORTFOLIO"]
+    )
+    approval.add_argument("--approved-by", required=True)
+    approval.add_argument("--note", default="")
+    approval.add_argument("--company-ref")
+    approval.add_argument("--occurrence-ref")
+    approval.add_argument("--ruleset", type=Path)
+    approval.add_argument("--request-id")
+    export = subparsers.add_parser(
+        "export-portfolio-review",
+        help="Exportar a fila central para CSV local",
+    )
+    export.add_argument("folder", type=Path)
+    batch = subparsers.add_parser(
+        "process-portfolio-periods",
+        help="Processar várias competências fiscais em um único lote incremental",
+    )
+    batch.add_argument("folder", type=Path)
+    batch.add_argument("--acquisition-ruleset", type=Path, required=True)
+    batch.add_argument("--cfop-ruleset", type=Path, required=True)
+    batch.add_argument("--analyst-rules", type=Path, required=True)
+    batch.add_argument("--workers", type=int, default=2)
+    batch.add_argument("--force", action="store_true")
+    batch.add_argument("--dry-run", action="store_true")
     return parser
 
 
@@ -140,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
                 ],
                 "outputs": [path.name for path in written],
             }
-        else:
+        elif args.command == "planning-status":
             result = evaluate_planning_status(args.folder, args.pgdas_folder)
             output_dir = args.output_dir or args.folder / "08_STATUS_PLANEJAMENTO"
             written = write_planning_status_outputs(result, output_dir)
@@ -158,6 +204,42 @@ def main(argv: list[str] | None = None) -> int:
                 "can_continue_partially": result["can_continue_partially"],
                 "outputs": [path.name for path in written],
             }
+        elif args.command == "review-portfolio":
+            response = review_portfolio(
+                args.folder,
+                page=args.page,
+                page_size=args.page_size,
+                ruleset_path=args.ruleset,
+            )
+            ready = True
+        elif args.command == "approve-portfolio-group":
+            response = approve_portfolio_group(
+                args.folder,
+                group_id=args.group_id,
+                nature=args.nature,
+                scope=args.scope,
+                approved_by=args.approved_by,
+                note=args.note,
+                company_ref=args.company_ref,
+                occurrence_ref=args.occurrence_ref,
+                ruleset_path=args.ruleset,
+                request_id=args.request_id,
+            )
+            ready = not response["reprocess_errors"]
+        elif args.command == "export-portfolio-review":
+            response = export_portfolio_review(args.folder)
+            ready = True
+        else:
+            response = process_portfolio_periods(
+                args.folder,
+                acquisition_ruleset=args.acquisition_ruleset,
+                cfop_ruleset=args.cfop_ruleset,
+                analyst_rules=args.analyst_rules,
+                workers=args.workers,
+                force=args.force,
+                dry_run=args.dry_run,
+            )
+            ready = response.get("failed", 0) == 0
     except ValidationError as error:
         print(
             json.dumps({"status": "OPERATIONAL_ERROR", "error": str(error)}),

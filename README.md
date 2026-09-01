@@ -25,9 +25,11 @@ A conversa anterior e a memória da outra máquina não são necessárias: o con
 ## Arquitetura ativa
 
 - `skills/planejar-reforma-tributaria/`: porta de entrada user-facing; identifica o estágio, executa ações autorizadas e solicita somente a próxima entrada indispensável.
+- `skills/processar-periodos-carteira/`: descobre competências fiscais, executa períodos em paralelo limitado e reaproveita resultados sem mudança.
 - `skills/validar-base-documental/`: coordenador do UC-001.
 - `skills/extrair-conteudo-fiscal/`: coordenador do UC-002; consome apenas documentos autorizados pelo UC-001.
 - `skills/revisar-aquisicoes/`: coordenador do UC-003; separa compras e gera fila para decisão do analista.
+- `skills/revisar-carteira-aquisicoes/`: consolida pendências repetidas, registra o alcance aprovado e reaplica decisões compatíveis.
 - `skills/revisar-receitas/`: segunda frente do UC-003; separa vendas, devoluções, remessas e operações pendentes.
 - `skills/conciliar-faturamento-simples/`: UC-003C; concilia o UC-003B com o PGDAS-D por estabelecimento e atividade.
 - `engine/`: motor Python determinístico compartilhado e gerenciado por `uv`.
@@ -74,6 +76,10 @@ Para validar Produto × NCM contra decisão do analista, coloque opcionalmente `
 
 O UC-003 seleciona somente registros de entrada e os separa em `PURCHASE_GOODS`, `PURCHASE_SERVICES` e `PURCHASE_TRANSPORT`. A finalidade econômica não é inferida: o analista pode aprová-la em `00_CONTROLE/classificacao-aquisicoes.csv`; sem decisão, o registro permanece pendente.
 
+Para revisar várias empresas, indique uma raiz de carteira à skill `revisar-carteira-aquisicoes`. Ela agrupa ocorrências com a mesma assinatura, apresenta páginas de até dez grupos e registra decisões em `.reforma-tributaria/revisoes-carteira.sqlite3`. O analista escolhe explicitamente se a aprovação vale para um item, uma empresa ou toda a carteira. Decisões compatíveis são materializadas nos arquivos locais das empresas e reaplicadas quando novas ocorrências surgem no alcance aprovado.
+
+O relatório detalhado permanece local em `.reforma-tributaria/fila-revisao-carteira.local.md`. A exportação CSV é opcional e não é a autoridade operacional.
+
 O par CST/cClassTrib declarado é validado contra snapshot versionado da tabela oficial. Antes de cada execução da skill, a versão publicada deve ser conferida no Portal NF-e. Atualização oficial exige novo snapshot, testes e versão do plugin; uma análise nunca muda silenciosamente de ruleset.
 
 As saídas ficam em `05_REVISAO_AQUISICOES/`. O UC-003 inicial não determina direito a crédito e mantém `uc004_planning_authorized=false`.
@@ -94,7 +100,13 @@ As saídas ficam em `07_CONCILIACAO_SIMPLES/`. Cobertura parcial gera fila para 
 
 Use `planejar-reforma-tributaria` para iniciar ou retomar. O coordenador grava `08_STATUS_PLANEJAMENTO/`, detecta artefatos já existentes e executa as próximas etapas seguras sem exigir que o usuário conheça UCs, launchers, códigos de saída ou gates.
 
-Quando depender de uma decisão humana, a resposta informa em linguagem comum: situação atual, etapas concluídas, achados, entrada necessária, motivo, impacto, o que ainda pode continuar e a próxima ação. As skills operacionais continuam disponíveis para diagnóstico e execução direta.
+Quando depender de uma decisão humana, a resposta informa em linguagem comum: situação atual, etapas concluídas, achados, entrada necessária, motivo, impacto, o que ainda pode continuar e a próxima ação. A revisão de várias empresas pode continuar pela conversa, sem exigir preenchimento operacional de planilha. As skills operacionais continuam disponíveis para diagnóstico e execução direta.
+
+## Processamento de vários períodos
+
+Use `processar-periodos-carteira` quando a pasta indicada contiver várias competências. O lote descobre as pastas com documentos fiscais, mantém estabelecimento e competência separados e processa até dois períodos simultaneamente por padrão.
+
+O estado fica localmente em `.reforma-tributaria/`. Um manifesto registra as entradas e regras usadas em cada competência: períodos sem mudança são reaproveitados, somente períodos alterados são reprocessados e uma falha não interrompe os demais. Pastas que contêm apenas declarações do Simples são fontes de conciliação, não competências fiscais independentes. Ao final, a fila central de revisão é atualizada uma única vez.
 
 ## Verificação local
 
@@ -121,4 +133,4 @@ Após alterar o código ou as skills:
 5. abra uma nova tarefa;
 6. faça commit e push somente após revisão.
 
-Veja o plano em [docs/PLANO-DE-CONCLUSAO.md](docs/PLANO-DE-CONCLUSAO.md) e a decisão sobre o MCP em [docs/adr/0001-retirar-mcp-do-runtime-ativo.md](docs/adr/0001-retirar-mcp-do-runtime-ativo.md).
+Veja o plano em [docs/PLANO-DE-CONCLUSAO.md](docs/PLANO-DE-CONCLUSAO.md), a decisão sobre o MCP em [docs/adr/0001-retirar-mcp-do-runtime-ativo.md](docs/adr/0001-retirar-mcp-do-runtime-ativo.md), a revisão conversacional em [docs/adr/0002-revisao-conversacional-da-carteira.md](docs/adr/0002-revisao-conversacional-da-carteira.md) e o lote incremental em [docs/adr/0003-processamento-incremental-por-competencia.md](docs/adr/0003-processamento-incremental-por-competencia.md).

@@ -561,6 +561,59 @@ def test_raw_folder_discovers_scope_pdfs_and_directions(tmp_path: Path) -> None:
     assert "FOLDER_DIRECTION_CONFLICT" not in warning_codes
 
 
+def test_raw_folder_accepts_validated_batch_scope_override(tmp_path: Path) -> None:
+    folder = tmp_path / "raw-batch"
+    folder.mkdir()
+    third = "11111111000191"
+    fourth = "22222222000191"
+    (folder / "first.xml").write_text(
+        nfe_xml(
+            access_key(OTHER, "55", 901),
+            "55",
+            OTHER,
+            COMPANY,
+            "2026-03-05",
+            "100.00",
+        ),
+        encoding="utf-8",
+    )
+    (folder / "second.xml").write_text(
+        nfe_xml(
+            access_key(third, "55", 902),
+            "55",
+            third,
+            fourth,
+            "2026-03-06",
+            "50.00",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValidationError, match="uma única empresa"):
+        validate_folder(folder)
+    scope = {
+        "schema_version": "1.0",
+        "entity_ref": "EMPRESA-LOTE",
+        "establishment_ref": "ESTAB-LOTE",
+        "entity_taxpayer_ids": [COMPANY],
+        "period": "2026-03",
+        "objective": "VALIDATE_DOCUMENT_BASE",
+        "document_families": ["NFE"],
+        "validation_policy": "DOCUMENTARY_INITIAL",
+        "report_population_policy": "COMPLEMENTARY",
+        "analysis_cutoff": "2026-03-31T23:59:59-03:00",
+    }
+
+    result = validate_folder(folder, scope_override=scope)
+
+    assert result["scope"]["input_mode"] == "BATCH_OVERRIDE"
+    assert result["scope"]["entity_ref"] == "EMPRESA-LOTE"
+    assert result["scope"]["period"] == "2026-03"
+    assert result["documents"]["fiscal_documents_found"] == 2
+    assert result["_private_scope_identity"]["entity_taxpayer_ids"] == [COMPANY]
+    json_path, _ = write_outputs(result, folder / "outputs")
+    assert COMPANY not in json_path.read_text(encoding="utf-8")
+
+
 def test_raw_nfse_abrasf_consolidated_documents_and_pdfs(tmp_path: Path) -> None:
     folder = tmp_path / "raw-nfse"
     provided = folder / "NFSE PRESTADOS"
