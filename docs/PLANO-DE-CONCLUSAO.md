@@ -6,6 +6,7 @@
 - Branch: `main`; confirme `git status` e `git log -1` ao retomar, sem depender de hash gravado neste documento.
 - Runtime ativo: Python/`uv`, sem servidor MCP no manifesto.
 - Motor compartilhado em `engine/`, com bootstrap central em `scripts/invoke-engine.ps1`.
+- Bootstrap instalado não reutiliza `.venv` empacotado: o runtime `uv` padrão é versionado no `LocalApplicationData`, evitando executáveis com caminho do checkout de desenvolvimento.
 - Skills no fonte: `planejar-reforma-tributaria` como porta de entrada, `uv` para manutenção e as skills operacionais de UC-001 a UC-003C.
 - UC-001: NF-e, NFC-e, NFS-e ABRASF e CT-e modelo 57.
 - Esquema de saída UC-001: `1.9.0`, com política de relatório, autorização por escopo e oito grupos operacionais.

@@ -33,7 +33,7 @@ A conversa anterior e a memória da outra máquina não são necessárias: o con
 - `skills/revisar-receitas/`: segunda frente do UC-003; separa vendas, devoluções, remessas e operações pendentes.
 - `skills/conciliar-faturamento-simples/`: UC-003C; concilia o UC-003B com o PGDAS-D por estabelecimento e atividade.
 - `engine/`: motor Python determinístico compartilhado e gerenciado por `uv`.
-- `scripts/invoke-engine.ps1`: bootstrap único do ambiente e do executável usado pelos launchers das skills.
+- `scripts/invoke-engine.ps1`: bootstrap único do ambiente e do executável usado pelos launchers das skills. Por padrão, o ambiente versionado fica no `LocalApplicationData` do usuário; `FISCAL_INTAKE_ENVIRONMENT` permite apontar outro local controlado.
 - `skills/validar-base-documental/references/`: políticas de validade, CT-e, NFS-e, grupos e autorizações por escopo.
 - `skills/uv/`: orientação vendorizada da Astral para manutenção do motor.
 - `03_SAIDAS/` e demais dados de clientes: ficam fora deste repositório.
