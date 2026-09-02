@@ -14,11 +14,12 @@ from .core import (
     _format_decimal,
     _parse_decimal,
 )
+from .counterparties import COUNTERPARTY_SCHEMA_VERSION
 from .revenue import REVENUE_SCHEMA_VERSION
 from .simple_reconciliation import SIMPLE_RECONCILIATION_SCHEMA_VERSION
 
 PLANNING_STATUS_SCHEMA = "br.com.planejamento-reforma-tributaria/planning-status"
-PLANNING_STATUS_SCHEMA_VERSION = "1.6.0"
+PLANNING_STATUS_SCHEMA_VERSION = "1.8.0"
 DOCUMENTARY_SUMMARY_SCHEMA = (
     "br.com.planejamento-reforma-tributaria/documentary-summary"
 )
@@ -86,6 +87,8 @@ def _documentary_summary(
     acquisition: dict[str, Any] | None,
     revenue: dict[str, Any] | None,
     reconciliation: dict[str, Any] | None,
+    supplier_summary: dict[str, Any] | None = None,
+    customer_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build an aggregate audit view without copying commercial details.
 
@@ -290,6 +293,10 @@ def _documentary_summary(
                 or []
             ),
         },
+        "counterparties": {
+            "suppliers": supplier_summary or {},
+            "customers": customer_summary or {},
+        },
         "classification_status": {
             "acquisition_nature": acquisition_nature_status,
             "revenue_cfop": revenue_classification_status,
@@ -390,6 +397,14 @@ def evaluate_planning_status(
         base / "07_CONCILIACAO_SIMPLES" / "simple-reconciliation-summary.json",
         "07_CONCILIACAO_SIMPLES/simple-reconciliation-summary.json",
     )
+    supplier_summary = _load_optional(
+        base / "05_REVISAO_AQUISICOES" / "fornecedores-regime-summary.json",
+        "05_REVISAO_AQUISICOES/fornecedores-regime-summary.json",
+    )
+    customer_summary = _load_optional(
+        base / "06_REVISAO_RECEITAS" / "clientes-cnpj-regime-summary.json",
+        "06_REVISAO_RECEITAS/clientes-cnpj-regime-summary.json",
+    )
     if (
         validation is not None
         and validation.get("schema_version") != DOCUMENT_SCHEMA_VERSION
@@ -409,6 +424,16 @@ def evaluate_planning_status(
         and reconciliation.get("schema_version") != SIMPLE_RECONCILIATION_SCHEMA_VERSION
     ):
         reconciliation = None
+    if (
+        supplier_summary is not None
+        and supplier_summary.get("schema_version") != COUNTERPARTY_SCHEMA_VERSION
+    ):
+        supplier_summary = None
+    if (
+        customer_summary is not None
+        and customer_summary.get("schema_version") != COUNTERPARTY_SCHEMA_VERSION
+    ):
+        customer_summary = None
     pgdas_available = bool(
         pgdas_folder and Path(pgdas_folder).expanduser().resolve().is_dir()
     )
@@ -421,10 +446,18 @@ def evaluate_planning_status(
             reconciliation.get("reconciliation_id") if reconciliation else None
         ),
         "pgdas_available": pgdas_available,
+        "supplier_summary": supplier_summary,
+        "customer_summary": customer_summary,
     }
     result = _base_result()
     result["documentary_summary"] = _documentary_summary(
-        validation, content, acquisition, revenue, reconciliation
+        validation,
+        content,
+        acquisition,
+        revenue,
+        reconciliation,
+        supplier_summary,
+        customer_summary,
     )
 
     if validation is None:
@@ -645,6 +678,14 @@ def evaluate_planning_status(
         )
         return _finalize(result, material)
 
+    counterparties_ready = supplier_summary is not None and customer_summary is not None
+    result["technical_gates"]["counterparties_ready"] = counterparties_ready
+    if counterparties_ready:
+        result["completed_stages"].append("COUNTERPARTY_REVIEW")
+        result["summary"]["completed"].append(
+            "Fornecedores, clientes CNPJ e vendas para CPF foram apurados."
+        )
+
     if reconciliation is None:
         result["current_stage"] = "SIMPLE_REVENUE_RECONCILIATION"
         if pgdas_available:
@@ -768,6 +809,47 @@ def evaluate_planning_status(
             )
         )
 
+    if not counterparties_ready:
+        result["available_actions"].append(
+            _action(
+                "RUN_COUNTERPARTY_REVIEW",
+                "Apurar fornecedores, clientes CNPJ e vendas para CPF",
+                automatic=True,
+                scope="COUNTERPARTIES",
+            )
+        )
+        result["current_stage"] = "COUNTERPARTY_REVIEW"
+        result["summary"].update(
+            {
+                "situation": "As contrapartes ainda precisam ser apuradas antes das regras materiais.",
+                "can_continue": "O plugin pode identificar fornecedores, clientes CNPJ e vendas para CPF automaticamente.",
+                "next_step": "Executar a apuração de contrapartes documentais.",
+            }
+        )
+        if result["required_inputs"]:
+            result["status"] = "NEEDS_USER_INPUT"
+            result["can_continue_partially"] = (
+                documentary_reconciled and not group_complete
+            )
+            result["summary"].update(
+                {
+                    "situation": (
+                        "O estabelecimento analisado conciliou, mas o fechamento do grupo e a apuração das contrapartes ainda estão pendentes."
+                        if documentary_reconciled and not group_complete
+                        else "A conciliação encontrou pontos que exigem documentos ou revisão do analista, além da apuração das contrapartes."
+                    ),
+                    "completed": result["summary"]["completed"]
+                    + ["Receitas confrontadas com a declaração do Simples Nacional."],
+                    "can_continue": (
+                        "A análise do estabelecimento conciliado pode continuar; complete a apuração das contrapartes e o consolidado do grupo."
+                        if result["can_continue_partially"]
+                        else "O planejamento conclusivo deve aguardar a apuração das contrapartes e a resolução das pendências."
+                    ),
+                    "next_step": "Executar a apuração de contrapartes e fornecer os demais itens pendentes.",
+                }
+            )
+        return _finalize(result, material)
+
     if result["required_inputs"]:
         result["status"] = "NEEDS_USER_INPUT"
         result["can_continue_partially"] = documentary_reconciled and not group_complete
@@ -841,6 +923,9 @@ def _append_documentary_summary(lines: list[str], result: dict[str, Any]) -> Non
     revenue = _mapping(documentary.get("revenue"))
     revenue_totals = _mapping(revenue.get("totals"))
     comparison = _mapping(documentary.get("purchase_sales_comparison"))
+    counterparties = _mapping(documentary.get("counterparties"))
+    suppliers = _mapping(counterparties.get("suppliers"))
+    customers = _mapping(counterparties.get("customers"))
     pgdas = _mapping(documentary.get("pgdas_reconciliation"))
     pgdas_totals = _mapping(pgdas.get("totals"))
 
@@ -1032,6 +1117,46 @@ def _append_documentary_summary(lines: list[str], result: dict[str, Any]) -> Non
                 f"| Relação compras/receita | {_summary_value(comparison.get('purchase_to_revenue_ratio'))} |",
                 f"- Situação: {_summary_status_label(comparison.get('status'))}. Indicador exclusivamente documental e de auditoria; não conclui margem, estoque ou irregularidade.",
             ]
+        )
+
+    supplier_statuses = _mapping(suppliers.get("by_simples_status"))
+    customer_statuses = _mapping(customers.get("cnpj_by_simples_status"))
+    individual_sales = _mapping(customers.get("sales_to_individuals"))
+    unidentified_sales = _mapping(customers.get("sales_to_unidentified_recipients"))
+    if suppliers or customers:
+        lines.extend(
+            [
+                "",
+                "### Contrapartes e regime",
+                "",
+                "| Grupo | Situação | Contrapartes | Documentos | Valor documental |",
+                "|---|---|---:|---:|---:|",
+            ]
+        )
+        for status, values in sorted(supplier_statuses.items()):
+            data = _mapping(values)
+            lines.append(
+                f"| Fornecedores | {status} | {_summary_value(data.get('counterparty_count'))} | "
+                f"{_summary_value(data.get('document_count'))} | {_summary_value(data.get('document_total'))} |"
+            )
+        for status, values in sorted(customer_statuses.items()):
+            data = _mapping(values)
+            lines.append(
+                f"| Clientes CNPJ | {status} | {_summary_value(data.get('counterparty_count'))} | "
+                f"{_summary_value(data.get('document_count'))} | {_summary_value(data.get('document_total'))} |"
+            )
+        if individual_sales:
+            lines.append(
+                f"| Vendas para CPF | — | — | {_summary_value(individual_sales.get('document_count'))} | "
+                f"{_summary_value(individual_sales.get('document_total'))} |"
+            )
+        if unidentified_sales:
+            lines.append(
+                f"| Destinatário não identificado | — | — | {_summary_value(unidentified_sales.get('document_count'))} | "
+                f"{_summary_value(unidentified_sales.get('document_total'))} |"
+            )
+        lines.append(
+            "Identificadores completos ficam somente nos artefatos locais autorizados; este resumo é agregado."
         )
 
     if any(value is not None for value in pgdas_totals.values()) or pgdas.get(

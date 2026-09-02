@@ -43,6 +43,11 @@ Quando houver mais de um estabelecimento na mesma competência e o PGDAS-D
 estiver disponível, o processamento executa também a conciliação consolidada do
 grupo. A saída fica na raiz da carteira e não altera as conciliações individuais.
 
+Quando houver dois ou mais estabelecimentos processados na mesma competência e
+o PGDAS-D estiver disponível, o lote executa também a conciliação consolidada do
+grupo. Para resolver clientes CNPJ pela base local do Simples em todo o lote,
+informe opcionalmente `-SimplesRegistry <arquivo JSONL>`.
+
 ## Resposta
 
 Informe somente:

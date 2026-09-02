@@ -27,6 +27,11 @@ from .core import (
     validate_folder,
     write_outputs,
 )
+from .counterparties import (
+    COUNTERPARTY_SCHEMA_VERSION,
+    review_counterparties_folder,
+    write_counterparty_outputs,
+)
 from .planning_status import (
     PLANNING_STATUS_SCHEMA_VERSION,
     evaluate_planning_status,
@@ -45,7 +50,7 @@ from .simple_reconciliation import (
     write_simple_reconciliation_outputs,
 )
 
-BATCH_SCHEMA_VERSION = "1.8.0"
+BATCH_SCHEMA_VERSION = "1.10.0"
 STATE_FOLDER = ".reforma-tributaria"
 MANIFEST_FILE = "processamento-lote-manifest.json"
 CONFIG_FILE = "configuracao-lote.local.json"
@@ -321,6 +326,12 @@ def _outputs_coherent(folder: Path) -> bool:
         planning = _load_json(
             folder / "08_STATUS_PLANEJAMENTO" / "planning-status.json"
         )
+        supplier_summary = _load_json(
+            folder / "05_REVISAO_AQUISICOES" / "fornecedores-regime-summary.json"
+        )
+        customer_summary = _load_json(
+            folder / "06_REVISAO_RECEITAS" / "clientes-cnpj-regime-summary.json"
+        )
     except ValidationError:
         return False
     if not all((validation, content, acquisition, revenue, planning)):
@@ -355,6 +366,13 @@ def _outputs_coherent(folder: Path) -> bool:
         or not revenue.get("review_id")
     ):
         return False
+    if (
+        supplier_summary.get("schema_version") != COUNTERPARTY_SCHEMA_VERSION
+        or supplier_summary.get("role") != "SUPPLIER"
+        or customer_summary.get("schema_version") != COUNTERPARTY_SCHEMA_VERSION
+        or customer_summary.get("role") != "CUSTOMER"
+    ):
+        return False
     return (
         planning.get("use_case") == "PLANNING_COORDINATION"
         and planning.get("schema_version") == PLANNING_STATUS_SCHEMA_VERSION
@@ -364,6 +382,7 @@ def _outputs_coherent(folder: Path) -> bool:
             "CONTENT_EXTRACTION",
             "ACQUISITION_REVIEW",
             "REVENUE_REVIEW",
+            "COUNTERPARTY_REVIEW",
         }.issubset(set(planning.get("completed_stages", [])))
     )
 
@@ -374,6 +393,7 @@ def _process_period(
     acquisition_ruleset: Path,
     cfop_ruleset: Path,
     analyst_rules: Path,
+    simples_registry: Path | None,
     prevalidated: dict[str, Any] | None,
 ) -> dict[str, Any]:
     started = time.perf_counter()
@@ -400,6 +420,10 @@ def _process_period(
         write_acquisition_outputs(acquisition, folder / "05_REVISAO_AQUISICOES")
         revenue = review_revenue_folder(folder, cfop_ruleset, analyst_rules)
         write_revenue_outputs(revenue, folder / "06_REVISAO_RECEITAS")
+        counterparties = review_counterparties_folder(
+            folder, simples_registry_path=simples_registry
+        )
+        write_counterparty_outputs(counterparties, folder)
 
         if (
             item["pgdas_folder"] is not None
@@ -536,6 +560,7 @@ def process_portfolio_periods(
     acquisition_ruleset: Path | str,
     cfop_ruleset: Path | str,
     analyst_rules: Path | str,
+    simples_registry: Path | str | None = None,
     workers: int = 2,
     force: bool = False,
     dry_run: bool = False,
@@ -566,6 +591,13 @@ def process_portfolio_periods(
         name: verify_trusted_hash(path, rule_hashes[name], f"ruleset do lote {name}")
         for name, path in rules.items()
     }
+    registry_file = (
+        Path(simples_registry).expanduser().resolve()
+        if simples_registry is not None
+        else None
+    )
+    if registry_file is not None and not registry_file.is_file():
+        raise ValidationError("O snapshot local do Simples informado não existe")
     state = root / STATE_FOLDER
     manifest_path = state / MANIFEST_FILE
     config_path = state / CONFIG_FILE
@@ -681,6 +713,7 @@ def process_portfolio_periods(
                 rules["acquisition"],
                 rules["cfop"],
                 rules["analyst"],
+                registry_file,
                 prevalidated.get(item["period_ref"]),
             ): item
             for item, _ in runnable

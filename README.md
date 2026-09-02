@@ -31,6 +31,7 @@ A conversa anterior e a memória da outra máquina não são necessárias: o con
 - `skills/revisar-aquisicoes/`: coordenador do UC-003; separa compras e gera fila para decisão do analista.
 - `skills/revisar-carteira-aquisicoes/`: consolida pendências repetidas, registra o alcance aprovado e reaplica decisões compatíveis.
 - `skills/revisar-receitas/`: segunda frente do UC-003; separa vendas, devoluções, remessas e operações pendentes.
+- `skills/revisar-contrapartes/`: apura fornecedores, clientes CNPJ e vendas para CPF com identificadores locais controlados.
 - `skills/conciliar-faturamento-simples/`: UC-003C; concilia o UC-003B com o PGDAS-D por estabelecimento e atividade.
 - `engine/`: motor Python determinístico compartilhado e gerenciado por `uv`.
 - `scripts/invoke-engine.ps1`: bootstrap único do ambiente e do executável usado pelos launchers das skills. Por padrão, o ambiente versionado fica no `LocalApplicationData` do usuário; `FISCAL_INTAKE_ENVIRONMENT` permite apontar outro local controlado.
@@ -128,6 +129,19 @@ As saídas ficam em `07_CONCILIACAO_SIMPLES/`. Cobertura parcial gera fila para 
 
 Se o PGDAS-D indicar regime de apuração `CAIXA`, o resultado apresenta um aviso
 não bloqueante e encaminha a análise temporal para o analista.
+
+## Contrapartes e regime
+
+O UC-003D cria uma linha por fornecedor CNPJ, com CRT e situação documental do
+Simples, em `05_REVISAO_AQUISICOES/fornecedores-regime.local.jsonl`. Clientes CNPJ
+são agrupados em `06_REVISAO_RECEITAS/clientes-cnpj-regime.local.jsonl` e podem
+ser resolvidos por um snapshot local JSONL informado ao launcher. Vendas para CPF
+são apenas contadas por documento único; nenhum CPF é persistido.
+
+Os resumos públicos mostram somente contagens e valores. Com `-MeetingReport`, o
+analista pode gerar localmente `09_APRESENTACAO_CLIENTE/contrapartes-regime.local.md`
+com CNPJs e nomes para uma reunião. Esse arquivo é confidencial, opcional e
+protegido pelo `.gitignore`.
 
 ## Experiência do usuário
 

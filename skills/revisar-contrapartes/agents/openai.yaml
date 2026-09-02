@@ -1,0 +1,6 @@
+interface:
+  display_name: "Revisar contrapartes e regime"
+  short_description: "Apura fornecedores, clientes CNPJ e vendas para CPF"
+  default_prompt: "Use $revisar-contrapartes para apurar fornecedores e clientes após a validação documental."
+policy:
+  allow_implicit_invocation: false

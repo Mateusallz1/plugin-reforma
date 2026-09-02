@@ -21,6 +21,10 @@ Quando `available_actions` trouxer uma ação com `automatic=true`, siga [refere
 
 Antes de revisar aquisições ou receitas, leia a skill operacional correspondente e cumpra a verificação de fontes oficiais. Não atualize snapshots silenciosamente. A conciliação do Simples exige uma pasta PGDAS-D explicitamente indicada.
 
+Depois de receitas e conciliação, a apuração de contrapartes pode ser executada
+automaticamente; seus identificadores permanecem em artefatos locais e o modo de
+reunião só é gerado mediante solicitação explícita.
+
 Pare quando:
 
 - houver `required_inputs` que dependam do usuário ou do analista;

@@ -10,6 +10,8 @@ param(
     [ValidateRange(1, 4)]
     [int]$Workers = 2,
 
+    [string]$SimplesRegistry,
+
     [switch]$Force
 )
 
@@ -38,6 +40,9 @@ if ($Action -eq "Plan") {
 }
 if ($Force) {
     $arguments += "--force"
+}
+if ($SimplesRegistry) {
+    $arguments += @("--simples-registry", $SimplesRegistry)
 }
 
 & $engineLauncher -Command "process-portfolio-periods" -CommandArguments $arguments

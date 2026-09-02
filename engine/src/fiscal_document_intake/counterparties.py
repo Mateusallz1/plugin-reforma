@@ -1,0 +1,629 @@
+from __future__ import annotations
+
+import calendar
+import hashlib
+import json
+import re
+from collections import defaultdict
+from datetime import date
+from decimal import Decimal
+from pathlib import Path
+from typing import Any
+from xml.etree.ElementTree import ParseError
+
+from defusedxml import ElementTree as SafeET
+from defusedxml.common import DefusedXmlException
+
+from .core import (
+    DOCUMENT_SCHEMA_VERSION,
+    ValidationError,
+    _format_decimal,
+    _local_name,
+    _parse_decimal,
+    _parse_xml_file,
+    _raw_files,
+    _safe_relative_files,
+)
+
+COUNTERPARTY_SCHEMA = (
+    "br.com.planejamento-reforma-tributaria/counterparty-regime-review"
+)
+COUNTERPARTY_SCHEMA_VERSION = "1.0.0"
+SUPPLIER_LOCAL_FILE = "fornecedores-regime.local.jsonl"
+CUSTOMER_LOCAL_FILE = "clientes-cnpj-regime.local.jsonl"
+SUPPLIER_SUMMARY_FILE = "fornecedores-regime-summary.json"
+CUSTOMER_SUMMARY_FILE = "clientes-cnpj-regime-summary.json"
+MEETING_REPORT_FILE = "contrapartes-regime.local.md"
+DEFAULT_REGISTRY = Path("00_CONTROLE") / "simples-registry.local.jsonl"
+PERIOD_PATTERN = re.compile(r"20\d{2}-(0[1-9]|1[0-2])")
+
+
+def _digits(value: Any) -> str:
+    return "".join(character for character in str(value or "") if character.isdigit())
+
+
+def _money(value: Any) -> str:
+    return _format_decimal(_parse_decimal(value) or Decimal(0)) or "0.00"
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _load_json(path: Path, label: str) -> dict[str, Any]:
+    if not path.is_file():
+        raise ValidationError(f"UC-003D exige {label}")
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ValidationError(f"{label} deve ser JSON UTF-8 válido") from error
+    if not isinstance(value, dict):
+        raise ValidationError(f"{label} deve conter um objeto JSON")
+    return value
+
+
+def _xml_paths(folder: Path) -> list[Path]:
+    structured = (folder / "00_CONTROLE" / "escopo.json").is_file() and (
+        folder / "01_XML"
+    ).is_dir()
+    return (
+        _safe_relative_files(folder / "01_XML", "*.xml")
+        if structured
+        else _raw_files(folder, ".xml")
+    )
+
+
+def _text(element: Any | None, names: set[str]) -> str | None:
+    if element is None:
+        return None
+    wanted = {name.casefold() for name in names}
+    for candidate in element.iter():
+        if _local_name(candidate.tag).casefold() in wanted and candidate.text:
+            value = candidate.text.strip()
+            if value:
+                return value
+    return None
+
+
+def _direct_text(element: Any | None, name: str) -> str | None:
+    if element is None:
+        return None
+    for child in list(element):
+        if _local_name(child.tag).casefold() == name.casefold() and child.text:
+            value = child.text.strip()
+            return value or None
+    return None
+
+
+def _nfe_crt(root: Any, document_key: str) -> str | None:
+    for nfe in (
+        candidate for candidate in root.iter() if _local_name(candidate.tag) == "NFe"
+    ):
+        info = next(
+            (
+                candidate
+                for candidate in nfe.iter()
+                if _local_name(candidate.tag) == "infNFe"
+            ),
+            None,
+        )
+        if info is None:
+            continue
+        key = _digits(info.attrib.get("Id", ""))
+        if document_key and key and key != _digits(document_key):
+            continue
+        emit = next(
+            (
+                candidate
+                for candidate in info.iter()
+                if _local_name(candidate.tag) == "emit"
+            ),
+            None,
+        )
+        crt = _direct_text(emit, "CRT")
+        if crt:
+            return crt
+    return None
+
+
+def _generic_issuer_regime(
+    root: Any, document_type: str
+) -> tuple[str | None, str | None]:
+    if document_type in {"NFE", "NFCE", "CTE"}:
+        for candidate in root.iter():
+            if _local_name(candidate.tag) in {"emit", "Emit"}:
+                crt = _direct_text(candidate, "CRT")
+                if crt:
+                    return crt, "DOCUMENT_CRT"
+    optante = _text(
+        root,
+        {"OptanteSimplesNacional", "OptanteSimples", "OptantePeloSimples"},
+    )
+    if optante:
+        normalized = _digits(optante) or optante.strip().upper()
+        if normalized in {"1", "S", "SIM", "TRUE"}:
+            return "OPTANTE_SIMPLES", "DOCUMENT_NFSE_OPTANTE"
+        if normalized in {"0", "2", "N", "NAO", "NÃO", "FALSE"}:
+            return "NAO_OPTANTE_SIMPLES", "DOCUMENT_NFSE_OPTANTE"
+    return None, None
+
+
+def _document_regime_evidence(
+    folder: Path, documents: dict[str, dict[str, Any]]
+) -> dict[str, list[tuple[str, str]]]:
+    evidence: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for path in _xml_paths(folder):
+        try:
+            parsed, _, _ = _parse_xml_file(path)
+            root = SafeET.parse(path).getroot()
+        except (OSError, ParseError, DefusedXmlException, ValidationError):
+            continue
+        for document in parsed:
+            selected = documents.get(document.get("document_ref"))
+            if selected is None:
+                continue
+            value: str | None = None
+            source: str | None = None
+            if selected.get("document_type") in {"NFE", "NFCE"}:
+                value = _nfe_crt(root, str(document.get("document_key") or ""))
+                source = "DOCUMENT_CRT" if value else None
+            if value is None:
+                value, source = _generic_issuer_regime(
+                    root, str(selected.get("document_type") or "")
+                )
+            if value and source:
+                evidence[selected["document_ref"]].append((value, source))
+        if len(parsed) == 1:
+            selected = documents.get(parsed[0].get("document_ref"))
+            if selected is not None and not evidence.get(selected["document_ref"]):
+                value, source = _generic_issuer_regime(
+                    root, str(selected.get("document_type") or "")
+                )
+                if value and source:
+                    evidence[selected["document_ref"]].append((value, source))
+    return evidence
+
+
+def _document_party_details(
+    folder: Path, documents: dict[str, dict[str, Any]]
+) -> dict[str, dict[str, str]]:
+    parties: dict[str, dict[str, str]] = {}
+    for path in _xml_paths(folder):
+        try:
+            parsed, _, _ = _parse_xml_file(path)
+        except (OSError, ValidationError):
+            continue
+        for document in parsed:
+            document_ref = document.get("document_ref")
+            if document_ref not in documents:
+                continue
+            parties[document_ref] = {
+                "issuer_id": _digits(document.get("issuer_id")),
+                "issuer_name": str(document.get("issuer_name") or ""),
+                "recipient_id": _digits(document.get("recipient_id")),
+                "recipient_name": str(document.get("recipient_name") or ""),
+            }
+    return parties
+
+
+def _period_bounds(period: str) -> tuple[date, date]:
+    if PERIOD_PATTERN.fullmatch(period) is None:
+        raise ValidationError("A competência deve estar no formato AAAA-MM")
+    year, month = (int(value) for value in period.split("-"))
+    return date(year, month, 1), date(year, month, calendar.monthrange(year, month)[1])
+
+
+def _load_registry(
+    folder: Path, registry_path: Path | str | None, period: str
+) -> dict[str, dict[str, Any]]:
+    path = (
+        Path(registry_path).expanduser().resolve()
+        if registry_path is not None
+        else folder / DEFAULT_REGISTRY
+    )
+    if not path.is_file():
+        return {}
+    period_start, period_end = _period_bounds(period)
+    result: dict[str, dict[str, Any]] = {}
+    try:
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+        for line_number, line in enumerate(lines, start=1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if not isinstance(row, dict):
+                raise ValidationError(
+                    f"{path.name} possui linha inválida: {line_number}"
+                )
+            cnpj = _digits(row.get("cnpj"))
+            status = str(row.get("status") or "").strip().upper()
+            effective_from = str(row.get("effective_from") or "").strip()
+            effective_to = str(row.get("effective_to") or "").strip()
+            source = str(row.get("source") or "").strip()
+            verified_at = str(row.get("verified_at") or "").strip()
+            if (
+                len(cnpj) != 14
+                or status
+                not in {
+                    "OPTANTE_SIMPLES",
+                    "NAO_OPTANTE_SIMPLES",
+                    "INDETERMINADO",
+                }
+                or not effective_from
+                or not effective_to
+                or not source
+                or not verified_at
+            ):
+                raise ValidationError(
+                    f"{path.name} possui registro inválido: {line_number}"
+                )
+            start = date.fromisoformat(effective_from)
+            end = date.fromisoformat(effective_to)
+            date.fromisoformat(verified_at)
+            if start <= period_end and end >= period_start:
+                previous = result.get(cnpj)
+                if previous is not None and previous["status"] != status:
+                    result[cnpj] = {
+                        "status": "DIVERGENTE_NO_PERIODO",
+                        "source": "REGISTRY",
+                    }
+                else:
+                    result[cnpj] = {
+                        "status": status,
+                        "source": source,
+                    }
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
+        if isinstance(error, ValidationError):
+            raise
+        raise ValidationError(
+            "O snapshot local de regime deve ser JSONL válido"
+        ) from error
+    return result
+
+
+def _status_from_values(values: set[str]) -> str:
+    if not values:
+        return "UNKNOWN"
+    if len(values) == 1:
+        return next(iter(values))
+    return "DIVERGENTE_NO_PERIODO"
+
+
+def _crt_status(value: str) -> str | None:
+    normalized = value.strip().upper()
+    if normalized in {"OPTANTE_SIMPLES", "NAO_OPTANTE_SIMPLES"}:
+        return normalized
+    normalized = _digits(value)
+    if normalized in {"1", "2", "4"}:
+        return "OPTANTE_SIMPLES"
+    if normalized == "3":
+        return "NAO_OPTANTE_SIMPLES"
+    return None
+
+
+def _aggregate_party(
+    records: list[dict[str, Any]],
+    *,
+    role: str,
+    registry: dict[str, dict[str, Any]],
+    document_evidence: dict[str, list[tuple[str, str]]],
+) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for record in records:
+        cnpj = _digits(record.get("party_id"))
+        if len(cnpj) != 14:
+            continue
+        entry = grouped.setdefault(
+            cnpj,
+            {
+                "schema": COUNTERPARTY_SCHEMA,
+                "schema_version": COUNTERPARTY_SCHEMA_VERSION,
+                "role": role,
+                "party_type": "CNPJ",
+                "cnpj": cnpj,
+                "name": record.get("party_name") or "",
+                "names_observed": [],
+                "competence": record["period"],
+                "document_count": 0,
+                "document_total": Decimal(0),
+                "document_refs": [],
+                "crt_values": set(),
+                "evidence_sources": set(),
+                "simples_status": "UNKNOWN",
+            },
+        )
+        name = str(record.get("party_name") or "").strip()
+        if name and name not in entry["names_observed"]:
+            entry["names_observed"].append(name)
+        entry["document_count"] += 1
+        entry["document_total"] += _parse_decimal(
+            record.get("gross_amount")
+        ) or Decimal(0)
+        entry["document_refs"].append(record["document_ref"])
+        for value, source in document_evidence.get(record["document_ref"], []):
+            entry["crt_values"].add(value)
+            entry["evidence_sources"].add(source)
+
+    result: list[dict[str, Any]] = []
+    for cnpj, entry in sorted(grouped.items()):
+        document_statuses = {
+            status
+            for value in entry["crt_values"]
+            if (status := _crt_status(value)) is not None
+        }
+        registry_entry = registry.get(cnpj)
+        registry_status = registry_entry.get("status") if registry_entry else None
+        if registry_status:
+            entry["evidence_sources"].add(
+                registry_entry.get("source", "LOCAL_REGISTRY")
+            )
+        document_status = _status_from_values(document_statuses)
+        if len(entry["crt_values"]) > 1:
+            status = "DIVERGENTE_NO_PERIODO"
+        elif registry_status and document_status not in {"UNKNOWN", registry_status}:
+            status = "EVIDENCIA_CONFLITANTE"
+        elif registry_status:
+            status = registry_status
+        else:
+            status = document_status
+        entry["simples_status"] = status
+        result.append(
+            {
+                **entry,
+                "name": entry["name"]
+                or (min(entry["names_observed"]) if entry["names_observed"] else ""),
+                "names_observed": sorted(entry["names_observed"]),
+                "document_total": _money(entry["document_total"]),
+                "document_refs": sorted(entry["document_refs"]),
+                "crt_values": sorted(entry["crt_values"]),
+                "evidence_sources": sorted(entry["evidence_sources"]),
+            }
+        )
+    return result
+
+
+def review_counterparties_folder(
+    folder: Path | str, *, simples_registry_path: Path | str | None = None
+) -> dict[str, Any]:
+    base = Path(folder).expanduser().resolve()
+    if not base.is_dir():
+        raise ValidationError("A pasta empresarial informada não existe")
+    validation = _load_json(
+        base / "03_SAIDAS" / "validation-result.json",
+        "03_SAIDAS/validation-result.json",
+    )
+    if (
+        validation.get("use_case") != "UC-001"
+        or validation.get("schema_version") != DOCUMENT_SCHEMA_VERSION
+        or not validation.get("gates", {}).get("planning_authorized")
+    ):
+        raise ValidationError("UC-003D exige validação documental vigente e autorizada")
+    period = str(validation.get("scope", {}).get("period") or "")
+    scope_input = _load_json(
+        base / "00_CONTROLE" / "escopo.json", "00_CONTROLE/escopo.json"
+    )
+    own_ids = {_digits(value) for value in scope_input.get("entity_taxpayer_ids", [])}
+    documents = {
+        record["document_ref"]: record
+        for record in validation.get("documents", {}).get("records", [])
+        if record.get("included") and record.get("authorized_for_planning")
+    }
+    evidence = _document_regime_evidence(base, documents)
+    parties = _document_party_details(base, documents)
+    registry = _load_registry(base, simples_registry_path, period)
+    supplier_inputs: list[dict[str, Any]] = []
+    customer_inputs: list[dict[str, Any]] = []
+    cpf_sales = 0
+    cpf_total = Decimal(0)
+    unidentified_sales = 0
+    unidentified_total = Decimal(0)
+    for document in documents.values():
+        party = parties.get(document["document_ref"], {})
+        party_id = party.get("issuer_id", "")
+        if document.get("direction") == "ENTRADA" and party_id not in own_ids:
+            supplier_inputs.append(
+                {
+                    "party_id": party_id,
+                    "party_name": party.get("issuer_name", ""),
+                    "gross_amount": document.get("gross_amount"),
+                    "document_ref": document["document_ref"],
+                    "period": period,
+                }
+            )
+        if document.get("direction") != "SAIDA":
+            continue
+        party_id = party.get("recipient_id", "")
+        if party_id in own_ids:
+            continue
+        amount = _parse_decimal(document.get("gross_amount")) or Decimal(0)
+        if len(party_id) == 11:
+            cpf_sales += 1
+            cpf_total += amount
+        elif len(party_id) == 14:
+            customer_inputs.append(
+                {
+                    "party_id": party_id,
+                    "party_name": party.get("recipient_name", ""),
+                    "gross_amount": document.get("gross_amount"),
+                    "document_ref": document["document_ref"],
+                    "period": period,
+                }
+            )
+        else:
+            unidentified_sales += 1
+            unidentified_total += amount
+
+    suppliers = _aggregate_party(
+        supplier_inputs,
+        role="SUPPLIER",
+        registry=registry,
+        document_evidence=evidence,
+    )
+    customers = _aggregate_party(
+        customer_inputs,
+        role="CUSTOMER",
+        registry=registry,
+        document_evidence=evidence,
+    )
+
+    def public_by_status(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        grouped: dict[str, dict[str, Any]] = {}
+        for item in items:
+            status = item["simples_status"]
+            summary = grouped.setdefault(
+                status,
+                {
+                    "counterparty_count": 0,
+                    "document_count": 0,
+                    "document_total": Decimal(0),
+                },
+            )
+            summary["counterparty_count"] += 1
+            summary["document_count"] += item["document_count"]
+            summary["document_total"] += _parse_decimal(
+                item["document_total"]
+            ) or Decimal(0)
+        return {
+            status: {
+                **summary,
+                "document_total": _money(summary["document_total"]),
+            }
+            for status, summary in sorted(grouped.items())
+        }
+
+    supplier_summary = {
+        "schema": COUNTERPARTY_SCHEMA,
+        "schema_version": COUNTERPARTY_SCHEMA_VERSION,
+        "role": "SUPPLIER",
+        "competence": period,
+        "supplier_count": len(suppliers),
+        "by_simples_status": public_by_status(suppliers),
+        "registry_status": "LOADED" if registry else "ABSENT",
+    }
+    customer_summary = {
+        "schema": COUNTERPARTY_SCHEMA,
+        "schema_version": COUNTERPARTY_SCHEMA_VERSION,
+        "role": "CUSTOMER",
+        "competence": period,
+        "cnpj_customer_count": len(customers),
+        "cnpj_by_simples_status": public_by_status(customers),
+        "sales_to_individuals": {
+            "document_count": cpf_sales,
+            "document_total": _money(cpf_total),
+        },
+        "sales_to_unidentified_recipients": {
+            "document_count": unidentified_sales,
+            "document_total": _money(unidentified_total),
+        },
+        "registry_status": "LOADED" if registry else "ABSENT",
+    }
+    return {
+        "schema": COUNTERPARTY_SCHEMA,
+        "schema_version": COUNTERPARTY_SCHEMA_VERSION,
+        "use_case": "UC-003D",
+        "scope": validation["scope"],
+        "supplier_summary": supplier_summary,
+        "customer_summary": customer_summary,
+        "_private_suppliers": suppliers,
+        "_private_customers": customers,
+    }
+
+
+def _meeting_report(result: dict[str, Any]) -> str:
+    lines = [
+        "# Apuração de contrapartes e regime",
+        "",
+        f"- Competência: `{result['scope']['period']}`",
+        "- Documento de trabalho confidencial para reunião; valores são documentais.",
+        "",
+        "## Fornecedores",
+        "",
+        "| CNPJ | Nome observado | Simples | Documentos | Valor documental |",
+        "|---|---|---|---:|---:|",
+    ]
+    for item in result["_private_suppliers"]:
+        lines.append(
+            f"| {item['cnpj']} | {item['name']} | {item['simples_status']} | {item['document_count']} | {item['document_total']} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Clientes CNPJ",
+            "",
+            "| CNPJ | Nome observado | Simples | Documentos | Valor documental |",
+            "|---|---|---|---:|---:|",
+        ]
+    )
+    for item in result["_private_customers"]:
+        lines.append(
+            f"| {item['cnpj']} | {item['name']} | {item['simples_status']} | {item['document_count']} | {item['document_total']} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Clientes pessoa física",
+            "",
+            f"- Quantidade de vendas para CPF: {result['customer_summary']['sales_to_individuals']['document_count']}",
+            f"- Valor das vendas para CPF: {result['customer_summary']['sales_to_individuals']['document_total']}",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
+def write_counterparty_outputs(
+    result: dict[str, Any], folder: Path | str, *, meeting_report: bool = False
+) -> list[Path]:
+    base = Path(folder).expanduser().resolve()
+    supplier_dir = base / "05_REVISAO_AQUISICOES"
+    customer_dir = base / "06_REVISAO_RECEITAS"
+    supplier_dir.mkdir(parents=True, exist_ok=True)
+    customer_dir.mkdir(parents=True, exist_ok=True)
+    supplier_summary_path = supplier_dir / SUPPLIER_SUMMARY_FILE
+    supplier_local_path = supplier_dir / SUPPLIER_LOCAL_FILE
+    customer_summary_path = customer_dir / CUSTOMER_SUMMARY_FILE
+    customer_local_path = customer_dir / CUSTOMER_LOCAL_FILE
+    supplier_summary_path.write_text(
+        json.dumps(
+            result["supplier_summary"], ensure_ascii=False, indent=2, sort_keys=True
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    supplier_local_path.write_text(
+        "".join(
+            json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n"
+            for item in result["_private_suppliers"]
+        ),
+        encoding="utf-8",
+    )
+    customer_summary_path.write_text(
+        json.dumps(
+            result["customer_summary"], ensure_ascii=False, indent=2, sort_keys=True
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    customer_local_path.write_text(
+        "".join(
+            json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n"
+            for item in result["_private_customers"]
+        ),
+        encoding="utf-8",
+    )
+    written = [
+        supplier_summary_path,
+        supplier_local_path,
+        customer_summary_path,
+        customer_local_path,
+    ]
+    if meeting_report:
+        meeting_dir = base / "09_APRESENTACAO_CLIENTE"
+        meeting_dir.mkdir(parents=True, exist_ok=True)
+        meeting_path = meeting_dir / MEETING_REPORT_FILE
+        meeting_path.write_text(_meeting_report(result), encoding="utf-8")
+        written.append(meeting_path)
+    return written

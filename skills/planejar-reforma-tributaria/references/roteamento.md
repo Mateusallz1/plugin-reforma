@@ -8,6 +8,7 @@ Execute as ações somente dentro da pasta empresarial indicada. Depois de cada 
 | `RUN_CONTENT_EXTRACTION` | Leia `../extrair-conteudo-fiscal/SKILL.md` e execute seu launcher. |
 | `RUN_ACQUISITION_REVIEW` | Leia `../revisar-aquisicoes/SKILL.md`, confira as fontes oficiais e execute seu launcher. |
 | `RUN_REVENUE_REVIEW` | Leia `../revisar-receitas/SKILL.md`, confira as fontes oficiais e execute seu launcher. |
+| `RUN_COUNTERPARTY_REVIEW` | Leia `../revisar-contrapartes/SKILL.md` e execute seu launcher. |
 | `RUN_SIMPLE_RECONCILIATION` | Leia `../conciliar-faturamento-simples/SKILL.md` e execute seu launcher com a pasta PGDAS-D indicada. |
 
 ## Tradução das entradas necessárias

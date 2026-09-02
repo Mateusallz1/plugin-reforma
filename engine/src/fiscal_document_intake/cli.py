@@ -8,6 +8,7 @@ from pathlib import Path
 from .acquisition import review_acquisitions_folder, write_acquisition_outputs
 from .content import extract_content_folder, write_content_outputs
 from .core import ValidationError, validate_folder, write_outputs
+from .counterparties import review_counterparties_folder, write_counterparty_outputs
 from .planning_status import evaluate_planning_status, write_planning_status_outputs
 from .portfolio_batch import process_portfolio_periods
 from .portfolio_review import (
@@ -68,6 +69,13 @@ def build_parser() -> argparse.ArgumentParser:
     simple_group.add_argument("--period", required=True)
     simple_group.add_argument("--pgdas-folder", type=Path, required=True)
     simple_group.add_argument("--output-dir", type=Path)
+    counterparties = subparsers.add_parser(
+        "review-counterparties",
+        help="Apurar fornecedores, clientes CNPJ e vendas para CPF",
+    )
+    counterparties.add_argument("folder", type=Path)
+    counterparties.add_argument("--simples-registry", type=Path)
+    counterparties.add_argument("--meeting-report", action="store_true")
     planning_status = subparsers.add_parser(
         "planning-status",
         help="Identificar o estágio atual e a próxima ação útil do planejamento",
@@ -116,6 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch.add_argument("--acquisition-ruleset", type=Path, required=True)
     batch.add_argument("--cfop-ruleset", type=Path, required=True)
     batch.add_argument("--analyst-rules", type=Path, required=True)
+    batch.add_argument("--simples-registry", type=Path)
     batch.add_argument("--workers", type=int, default=2)
     batch.add_argument("--force", action="store_true")
     batch.add_argument("--dry-run", action="store_true")
@@ -232,6 +241,26 @@ def main(argv: list[str] | None = None) -> int:
                 "group_coverage_complete": result["gates"]["group_coverage_complete"],
                 "outputs": [path.name for path in written],
             }
+        elif args.command == "review-counterparties":
+            result = review_counterparties_folder(
+                args.folder, simples_registry_path=args.simples_registry
+            )
+            written = write_counterparty_outputs(
+                result, args.folder, meeting_report=args.meeting_report
+            )
+            ready = True
+            response = {
+                "status": "COUNTERPARTIES_REVIEW_READY",
+                "use_case": result["use_case"],
+                "supplier_count": result["supplier_summary"]["supplier_count"],
+                "cnpj_customer_count": result["customer_summary"][
+                    "cnpj_customer_count"
+                ],
+                "sales_to_individuals": result["customer_summary"][
+                    "sales_to_individuals"
+                ],
+                "outputs": [path.name for path in written],
+            }
         elif args.command == "planning-status":
             result = evaluate_planning_status(args.folder, args.pgdas_folder)
             output_dir = args.output_dir or args.folder / "08_STATUS_PLANEJAMENTO"
@@ -285,6 +314,7 @@ def main(argv: list[str] | None = None) -> int:
                 acquisition_ruleset=args.acquisition_ruleset,
                 cfop_ruleset=args.cfop_ruleset,
                 analyst_rules=args.analyst_rules,
+                simples_registry=args.simples_registry,
                 workers=args.workers,
                 force=args.force,
                 dry_run=args.dry_run,

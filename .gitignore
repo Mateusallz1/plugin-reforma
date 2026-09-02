@@ -36,6 +36,7 @@ outputs/
 **/06_REVISAO_RECEITAS/
 **/07_CONCILIACAO_SIMPLES/
 **/08_STATUS_PLANEJAMENTO/
+**/09_APRESENTACAO_CLIENTE/
 **/.reforma-tributaria/
 **/UC001_*/
 **/*.local.jsonl

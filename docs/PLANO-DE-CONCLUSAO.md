@@ -7,13 +7,13 @@
 - Runtime ativo: Python/`uv`, sem servidor MCP no manifesto.
 - Motor compartilhado em `engine/`, com bootstrap central em `scripts/invoke-engine.ps1`.
 - Bootstrap instalado não reutiliza `.venv` empacotado: o runtime `uv` padrão é versionado no `LocalApplicationData`, evitando executáveis com caminho do checkout de desenvolvimento.
-- Skills no fonte: `planejar-reforma-tributaria` como porta de entrada, `uv` para manutenção e as skills operacionais de UC-001 a UC-003C.
+- Skills no fonte: `planejar-reforma-tributaria` como porta de entrada, `uv` para manutenção e as skills operacionais de UC-001 a UC-003D.
 - UC-001: NF-e, NFC-e, NFS-e ABRASF e CT-e modelo 57.
 - Esquema de saída UC-001: `1.9.0`, com política de relatório, autorização por escopo e oito grupos operacionais.
 - Homologação real: 130 documentos incluídos, três escopos `READY`, sem bloqueadores.
 - UC-002: extração normalizada de produtos, serviços e transportes somente nos grupos operacionais autorizados.
 - Homologação real do UC-002: 130 documentos selecionados, 204 registros, 25 componentes, 44 NF-e reconciliadas e nenhum bloqueador de extração.
-- Testes: 91 aprovados, incluindo ausência de movimento, migração de schemas, composição completa do `vNF`, compras documentais, devoluções, comparação compras × vendas, triagem NCM, diagnóstico de nomenclatura, integridade dos rulesets, regime CAIXA, `natOp`, consolidação matriz/filiais, regressões de hash de conteúdo, coerência das saídas, fechamento SQLite e retomada de aprovações preparadas; Ruff, formatação, empacotamento do snapshot e lock do `uv` aprovados.
+- Testes: 95 aprovados, incluindo ausência de movimento, migração de schemas, composição completa do `vNF`, compras documentais, devoluções, comparação compras × vendas, triagem NCM, diagnóstico de nomenclatura, integridade dos rulesets, regime CAIXA, `natOp`, consolidação matriz/filiais, contrapartes e privacidade de CPF, divergência de CRT por competência, regressões de hash de conteúdo, coerência das saídas, fechamento SQLite e retomada de aprovações preparadas; Ruff, formatação, empacotamento do snapshot e lock do `uv` aprovados.
 
 ## Concluído
 
@@ -56,7 +56,8 @@
 - [x] `natOp` documental preservado nos produtos e incluído na assinatura da fila.
 - [x] Consolidação automática de matriz/filiais por competência, derivada da raiz e confirmada pelos documentos e pelo PGDAS-D.
 - [x] UC-003C com saída de grupo versionada (`1.2.0`) e artefatos locais separados da conciliação individual.
-- [x] Lote da carteira com consolidação automática por competência e schema `1.8.0`.
+- [x] Lote da carteira com consolidação automática por competência e schema `1.10.0`.
+- [x] UC-003D com inventário local de fornecedores, clientes CNPJ e vendas para CPF sem persistir CPFs, além de relatório de reunião identificado sob demanda.
 - [x] Coordenador `planejar-reforma-tributaria` com retomada por estado, execução automática segura e solicitações em linguagem comum.
 - [x] Fila conversacional da carteira com agrupamento, SQLite local, alcance explícito, reaplicação e exportação opcional.
 - [x] Processamento incremental de várias competências, com paralelismo limitado, isolamento de falhas e retomada por manifesto local.
@@ -67,7 +68,7 @@ publicada em 01/09/2026, com hash SHA-256 registrado no resumo do UC-002. Ele é
 consultado localmente durante a análise; a atualização é uma tarefa explícita
 de manutenção.
 
-A homologação real da política `COMPLEMENTARY` preservou 130 documentos incluídos e `planning_authorized=true`; sem relatório disponível, `reconciliation_ready=false` e 130 ocorrências `XML_WITHOUT_REPORT` permaneceram como avisos. O UC-002 passou a consumir o schema 1.4.0 sem regressão e manteve os registros elegíveis para o UC-003. A suíte sintética atual tem 91 testes aprovados.
+A homologação real da política `COMPLEMENTARY` preservou 130 documentos incluídos e `planning_authorized=true`; sem relatório disponível, `reconciliation_ready=false` e 130 ocorrências `XML_WITHOUT_REPORT` permaneceram como avisos. O UC-002 passou a consumir o schema 1.4.0 sem regressão e manteve os registros elegíveis para o UC-003. A suíte sintética atual tem 95 testes aprovados.
 
 ## Ajustes desta fase
 

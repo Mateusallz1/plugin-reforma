@@ -146,6 +146,37 @@ def write_reconciliation(folder: Path, *, group_complete: bool = False) -> None:
     )
 
 
+def write_counterparty_summaries(folder: Path) -> None:
+    write_json(
+        folder / "05_REVISAO_AQUISICOES" / "fornecedores-regime-summary.json",
+        {
+            "schema_version": "1.0.0",
+            "role": "SUPPLIER",
+            "supplier_count": 1,
+            "by_simples_status": {
+                "OPTANTE_SIMPLES": {
+                    "counterparty_count": 1,
+                    "document_count": 1,
+                    "document_total": "100.00",
+                }
+            },
+        },
+    )
+    write_json(
+        folder / "06_REVISAO_RECEITAS" / "clientes-cnpj-regime-summary.json",
+        {
+            "schema_version": "1.0.0",
+            "role": "CUSTOMER",
+            "cnpj_customer_count": 0,
+            "cnpj_by_simples_status": {},
+            "sales_to_individuals": {
+                "document_count": 2,
+                "document_total": "200.00",
+            },
+        },
+    )
+
+
 def test_status_starts_with_document_validation(tmp_path: Path) -> None:
     folder = tmp_path / "company"
     folder.mkdir()
@@ -446,6 +477,28 @@ def test_status_shows_purchase_sales_comparison_without_new_gate(
     assert "| Relação compras/receita | 0.1429 |" in report
     assert "NON_REVENUE_REMITTANCE" in report
     assert "Valor total dos documentos de entrada fora de compras: 50.00" in report
+
+
+def test_status_includes_counterparty_summary_without_exposing_identity(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "company-counterparties"
+    write_validation(folder)
+    write_content(folder)
+    write_acquisition(folder, analyst_review=False)
+    write_revenue(folder)
+    write_reconciliation(folder, group_complete=True)
+    write_counterparty_summaries(folder)
+
+    result = evaluate_planning_status(folder)
+    documentary = result["documentary_summary"]
+
+    assert "COUNTERPARTY_REVIEW" in result["completed_stages"]
+    assert documentary["counterparties"]["suppliers"]["supplier_count"] == 1
+    assert documentary["counterparties"]["customers"]["sales_to_individuals"] == {
+        "document_count": 2,
+        "document_total": "200.00",
+    }
 
 
 @pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="Windows launcher")

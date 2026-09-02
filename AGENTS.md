@@ -2,7 +2,7 @@
 
 ## Autoridade atual
 
-- A porta de entrada para uma empresa e uma competência é `planejar-reforma-tributaria`. Para várias competências, `processar-periodos-carteira` executa o lote incremental. Para a revisão central, `revisar-carteira-aquisicoes` consolida pendências e registra aprovações com alcance explícito. As skills UC-001 a UC-003C permanecem como componentes operacionais.
+- A porta de entrada para uma empresa e uma competência é `planejar-reforma-tributaria`. Para várias competências, `processar-periodos-carteira` executa o lote incremental. Para a revisão central, `revisar-carteira-aquisicoes` consolida pendências e registra aprovações com alcance explícito. A skill `revisar-contrapartes` apura fornecedores, clientes CNPJ e vendas para CPF. As skills UC-001 a UC-003D permanecem como componentes operacionais.
 - A validação documental grava `validation-result.json` e `relatorio-prontidao-documental.md` na pasta do cliente.
 - As etapas gravam artefatos em `03_SAIDAS/`, `04_CONTEUDO/`, `05_REVISAO_AQUISICOES/`, `06_REVISAO_RECEITAS/`, `07_CONCILIACAO_SIMPLES/` e `08_STATUS_PLANEJAMENTO/`. Arquivos `*.local.jsonl` contêm detalhes comerciais e devem permanecer locais e restritos.
 - O motor compartilhado fica em `engine/`; `scripts/invoke-engine.ps1` é a única autoridade para preparar o ambiente `uv` e executar o CLI.
@@ -24,6 +24,7 @@
 - Produto com NCM ausente/malformado, inexistente ou fora de vigência no snapshot fica restrito por item; divergência de catálogo `APROVADO` também restringe somente o item. Não bloqueie serviços, transportes ou outros produtos elegíveis.
 - Sem catálogo Produto × NCM ou sem correspondência por `cProd`, registre inconclusão e permita avanço provisório. Não confirme incompatibilidade por similaridade textual.
 - O UC-003 revisa somente entradas e não infere natureza econômica ou direito a crédito. Decisões exigem `status=APROVADO` no arquivo local do analista; a fila central pode materializar esse arquivo a partir de uma aprovação humana registrada em SQLite local.
+- O UC-003D usa CRT e/ou snapshot local do Simples para fornecedores e clientes CNPJ. Vendas para CPF são apenas contadas por documento e nenhum CPF é persistido.
 - A fila central usa somente a raiz de carteira indicada pelo usuário. `ITEM`, `COMPANY` e `PORTFOLIO` são alcances distintos; nunca escolha ou amplie `PORTFOLIO` silenciosamente.
 - O lote mantém cada estabelecimento e competência isolados. O manifesto local deve reaproveitar períodos sem mudança, continuar diante de falha parcial e reprocessar somente entradas alteradas ou quando `force` for explicitamente solicitado.
 - A reutilização incremental exige hash de conteúdo e coerência dos schemas e IDs das saídas. Presença de arquivo, tamanho e `mtime` não são evidência suficiente.

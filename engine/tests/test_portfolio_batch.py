@@ -121,6 +121,18 @@ def test_batch_discovers_and_processes_multiple_periods_incrementally(
         acquisition["ruleset_lock"]["cfop"]["snapshot_id"]
         == "CFOP-IT-2023.002-V2.00-2026-08-25"
     )
+    assert (
+        first / "05_REVISAO_AQUISICOES" / "fornecedores-regime-summary.json"
+    ).is_file()
+    assert (
+        first / "06_REVISAO_RECEITAS" / "clientes-cnpj-regime-summary.json"
+    ).is_file()
+    planning = json.loads(
+        (first / "08_STATUS_PLANEJAMENTO" / "planning-status.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "COUNTERPARTY_REVIEW" in planning["completed_stages"]
 
 
 def test_batch_reprocesses_only_changed_period(tmp_path: Path) -> None:

@@ -324,7 +324,7 @@ restrita à pasta local, mas o resumo e o relatório mostram o valor dos
 documentos distintos e quantos documentos e itens foram excluídos por devolução
 de venda, remessa, retorno ou anulação. O total monetário é contado uma vez e
 não é rateado entre motivos. Essa correção elevou o contrato de aquisições
-para `1.5.0`, o status de planejamento para `1.6.0` e o lote para `1.8.0`.
+para `1.5.0`, o status de planejamento para `1.8.0` e o lote para `1.10.0`.
 
 ## Migração e coerência
 
@@ -333,8 +333,8 @@ Ao implementar os contratos:
 - `CONTENT_SCHEMA_VERSION`: `1.4.0`;
 - `ACQUISITION_SCHEMA_VERSION`: `1.5.0`;
 - `REVENUE_SCHEMA_VERSION`: `1.4.0`;
-- `PLANNING_STATUS_SCHEMA_VERSION`: `1.6.0`;
-- `BATCH_SCHEMA_VERSION`: `1.8.0`.
+- `PLANNING_STATUS_SCHEMA_VERSION`: `1.8.0`;
+- `BATCH_SCHEMA_VERSION`: `1.10.0`.
 
 Atualizar `_outputs_coherent`, os checks do coordenador e os IDs materiais. Os
 loaders também conferem cada hash com o digest confiável embarcado; uma alteração
