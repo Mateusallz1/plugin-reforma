@@ -84,11 +84,26 @@ O par CST/cClassTrib declarado é validado contra snapshot versionado da tabela 
 
 As saídas ficam em `05_REVISAO_AQUISICOES/`. O UC-003 inicial não determina direito a crédito e mantém `uc004_planning_authorized=false`.
 
+O resumo também publica `documentary_totals`: cada documento de entrada é
+contado uma única vez pelo seu total declarado, com subtotais por tipo e grupo,
+devoluções e operações que não representam compra. Documentos mistos ficam em
+tratamento pendente; compras sem crédito continuam no total documental.
+
 ## Revisão das receitas
 
 O UC-003B usa o total do documento do UC-001 e os CFOPs dos itens do UC-002. O snapshot oficial CFOP identifica devoluções, retornos, anulações e remessas; o ruleset do analista reconhece CFOPs usuais de venda sem tratá-los como lista exaustiva.
 
 As saídas ficam em `06_REVISAO_RECEITAS/` e separam receita documental bruta, devoluções de venda, operações fora da receita, tratamento pendente e diferenças entre `vNF` e a composição declarada do documento. `net_documentary_revenue_candidate` não representa receita tributável concluída.
+
+O status de planejamento expõe ainda uma comparação informativa entre compras e
+vendas do mesmo estabelecimento e competência. A razão usa os candidatos
+líquidos, é apresentada com quatro casas quando há denominador positivo e nunca
+cria alerta de margem, risco ou omissão.
+
+O UC-002 mantém um snapshot oficial versionado da NCM para verificar existência
+e vigência do código informado. O texto oficial é apenas apoio à triagem:
+descrição isolada nunca confirma incompatibilidade, benefício ou alíquota. A
+fila Produto × NCM e a evidência comercial detalhada permanecem locais.
 
 ## Conciliação do Simples Nacional
 

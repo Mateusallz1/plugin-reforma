@@ -32,6 +32,22 @@ RULESET = (
     / "snapshots"
     / "cclass-trib-2026-06-22.json"
 )
+CFOP_RULESET = (
+    PLUGIN_ROOT
+    / "skills"
+    / "revisar-receitas"
+    / "references"
+    / "snapshots"
+    / "cfop-2026-08-25.json"
+)
+ANALYST_RULES = (
+    PLUGIN_ROOT
+    / "skills"
+    / "revisar-receitas"
+    / "references"
+    / "rules"
+    / "revenue-cfop-rules-v1.json"
+)
 
 
 def make_acquisition_case(tmp_path: Path) -> Path:
@@ -119,6 +135,57 @@ def test_uc003_reviews_acquisitions_deterministically_and_preserves_privacy(
     assert COMPANY not in public_output + local_output
     assert OTHER not in public_output + local_output
     assert main(["review-acquisitions", str(folder), "--ruleset", str(RULESET)]) == 0
+
+
+def test_uc003_documentary_totals_use_unique_document_values(tmp_path: Path) -> None:
+    folder = make_acquisition_case(tmp_path)
+    result = review_acquisitions_folder(
+        folder,
+        RULESET,
+        cfop_ruleset_path=CFOP_RULESET,
+        analyst_rules_path=ANALYST_RULES,
+    )
+
+    assert result["documentary_totals"] == {
+        "amount_basis": "UNIQUE_DOCUMENT_TOTAL",
+        "document_count": 3,
+        "gross_documentary_purchases": "600.00",
+        "pending_document_count": 0,
+        "pending_purchase_treatment": "0.00",
+        "non_purchase_entry_operations": "0.00",
+        "by_document_type": {"CTE": "300.00", "NFE": "100.00", "NFSE": "200.00"},
+        "by_analysis_group": {
+            "CTE_TOMADOS": "300.00",
+            "NFE_ENTRADAS": "100.00",
+            "NFSE_TOMADOS": "200.00",
+        },
+        "cross_document_linkage": "NOT_PERFORMED",
+    }
+
+
+def test_uc003_does_not_count_sales_return_as_purchase(tmp_path: Path) -> None:
+    folder = make_acquisition_case(tmp_path)
+    return_key = access_key(OTHER, "55", 82)
+    return_xml = nfe_xml(
+        return_key, "55", OTHER, COMPANY, "2026-03-06", "50.00"
+    ).replace("<CFOP>5102</CFOP>", "<CFOP>1202</CFOP>")
+    (folder / "01_XML" / "sales-return.xml").write_text(return_xml, encoding="utf-8")
+    validation = validate_folder(folder)
+    write_outputs(validation, folder / "03_SAIDAS")
+    content = extract_content_folder(folder)
+    write_content_outputs(content, folder / "04_CONTEUDO")
+
+    result = review_acquisitions_folder(
+        folder,
+        RULESET,
+        cfop_ruleset_path=CFOP_RULESET,
+        analyst_rules_path=ANALYST_RULES,
+    )
+
+    assert result["acquisition_records"] == 3
+    assert result["non_acquisition_records"] == 1
+    assert result["documentary_totals"]["gross_documentary_purchases"] == "600.00"
+    assert result["documentary_totals"]["non_purchase_entry_operations"] == "50.00"
 
 
 def test_uc003_applies_only_approved_compatible_analyst_decisions(

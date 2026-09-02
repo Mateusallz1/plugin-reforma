@@ -13,7 +13,7 @@
 - Homologação real: 130 documentos incluídos, três escopos `READY`, sem bloqueadores.
 - UC-002: extração normalizada de produtos, serviços e transportes somente nos grupos operacionais autorizados.
 - Homologação real do UC-002: 130 documentos selecionados, 204 registros, 25 componentes, 44 NF-e reconciliadas e nenhum bloqueador de extração.
-- Testes: 79 aprovados, incluindo ausência de movimento, migração de schemas, composição completa do `vNF`, regressões de hash de conteúdo, coerência das saídas, fechamento SQLite e retomada de aprovações preparadas; Ruff, formatação e lock do `uv` aprovados.
+- Testes: 83 aprovados, incluindo ausência de movimento, migração de schemas, composição completa do `vNF`, compras documentais, devoluções, comparação compras × vendas, triagem NCM, regressões de hash de conteúdo, coerência das saídas, fechamento SQLite e retomada de aprovações preparadas; Ruff, formatação, empacotamento do snapshot e lock do `uv` aprovados.
 
 ## Concluído
 
@@ -36,6 +36,7 @@
 - [x] Observações do UC-002 sem bloqueio do início do UC-003.
 - [x] Restrição por item para NCM ausente/malformado ou divergência confirmada Produto × NCM.
 - [x] Catálogo opcional homologado pelo analista, sem inferência bloqueante por descrição.
+- [x] Snapshot oficial NCM versionado, com hash, vigência e triagem descritiva não bloqueante.
 - [x] Política de relatório `COMPLEMENTARY` explícita e retrocompatível; `WHITELIST` reservado para evolução futura.
 - [x] UC-003 inicial com separação de mercadorias, serviços e transportes adquiridos.
 - [x] Snapshot oficial IT 2025.002 v1.60 com 18 CSTs, 164 pares cClassTrib e hash do XLSX de origem.
@@ -46,11 +47,17 @@
 - [x] Snapshot CFOP IT 2023.002 v2.00, publicado em 25/08/2026, com 619 códigos e hash do XLSX.
 - [x] Devoluções e remessas orientadas pelos indicadores oficiais, com checklist do analista separado.
 - [x] UC-003C com parser do PGDAS-D, conciliação por estabelecimento e atividade e cobertura parcial sem presunção de não emissão.
+- [x] Totais documentais de compras por documento único, separação de entradas sem compra e comparação informativa com vendas por competência.
 - [x] Coordenador `planejar-reforma-tributaria` com retomada por estado, execução automática segura e solicitações em linguagem comum.
 - [x] Fila conversacional da carteira com agrupamento, SQLite local, alcance explícito, reaplicação e exportação opcional.
 - [x] Processamento incremental de várias competências, com paralelismo limitado, isolamento de falhas e retomada por manifesto local.
 
-A homologação real da política `COMPLEMENTARY` preservou 130 documentos incluídos e `planning_authorized=true`; sem relatório disponível, `reconciliation_ready=false` e 130 ocorrências `XML_WITHOUT_REPORT` permaneceram como avisos. O UC-002 consumiu o schema 1.2.0 sem regressão e manteve 204 registros elegíveis para o UC-003.
+O snapshot NCM embarcado é `ncm-2026-09-01`, vigente conforme a atualização
+publicada em 01/09/2026, com hash SHA-256 registrado no resumo do UC-002. Ele é
+consultado localmente durante a análise; a atualização é uma tarefa explícita
+de manutenção.
+
+A homologação real da política `COMPLEMENTARY` preservou 130 documentos incluídos e `planning_authorized=true`; sem relatório disponível, `reconciliation_ready=false` e 130 ocorrências `XML_WITHOUT_REPORT` permaneceram como avisos. O UC-002 passou a consumir o schema 1.3.0 sem regressão e manteve os registros elegíveis para o UC-003. A suíte sintética atual tem 83 testes aprovados.
 
 ## Ajustes desta fase
 
@@ -83,7 +90,7 @@ O UC-002 consome o `validation-result.json`, seleciona somente documentos autori
 
 Na base real homologada, 80 NFS-e trouxeram código de nove dígitos no campo `CodigoCnae`; o motor preservou o valor e marcou `CNAE_INVALID` para revisão, pois não corresponde ao formato nacional de sete dígitos. A ausência de NBS e cClassTrib também exige revisão, mas não bloqueia a extração.
 
-Na política `1.1.0`, esses achados passam a ser observações e não impedem o UC-003. O avanço é controlado por registro: NCM ausente/malformado restringe o produto e uma divergência somente é confirmada quando `cProd` e NCM diferem de uma entrada `APROVADO` em `00_CONTROLE/catalogo-produtos-ncm.csv`. Sem catálogo, o resultado é inconclusivo e provisoriamente elegível.
+Na política atual, esses achados passam a ser observações e não impedem o UC-003. O avanço é controlado por registro: NCM ausente/malformado, inexistente ou fora de vigência restringe o produto, e uma divergência Produto × NCM somente é confirmada quando `cProd` e NCM diferem de uma entrada `APROVADO` em `00_CONTROLE/catalogo-produtos-ncm.csv`. Sem catálogo, o resultado é inconclusivo e provisoriamente elegível.
 
 A nova homologação real manteve 204 registros: 204 elegíveis, nenhuma restrição e `uc003_analysis_authorized=true`. Foram preservadas 453 observações agregadas — 175 sem `cClassTrib`, 118 sem catálogo Produto × NCM, 80 CNAE fora do formato nacional e 80 sem NBS — sem expor descrições ou identificadores fiscais.
 
@@ -106,11 +113,21 @@ Na homologação real, 204 registros originaram 70 aquisições: 63 mercadorias,
 
 Ainda falta homologar a fila real e implementar as regras materiais que avaliarão hipóteses de crédito. Até lá, `uc004_planning_authorized=false`.
 
+O total documental de compras agora usa o total declarado do documento único,
+sem somar itens nem excluir operações por ausência de crédito. Devoluções de
+venda, remessas, retornos e documentos mistos ficam demonstrados em estados
+separados; somente o analista pode resolver uma natureza pendente.
+
 ### 7. UC-003B — revisão inicial das receitas
 
 O piloto combina total documental do UC-001 com CFOPs dos itens do UC-002. A composição de `vNF` usa os totais declarados do documento e confere `vProd`/`indTot` dos itens. Notas mistas ou resíduos não explicados ficam pendentes, sem rateio automático.
 
 Na base real, 29 NF-e de venda somaram R$ 51.345,00 e 79 NFS-e prestadas somaram R$ 66.160,00. A receita operacional documental candidata foi R$ 117.505,00, sem devoluções, remessas, pendências ou componentes não alocados. A população de receita ficou pronta, mas o UC-004 permanece não autorizado.
+
+O resumo de planejamento também calcula, quando ambas as frentes estão prontas,
+o candidato líquido documental de compras, o candidato líquido documental de
+receita e sua razão informativa. A comparação não vincula documentos
+economicamente e não altera nenhum gate fiscal.
 
 ### 8. UC-003C — conciliação do faturamento no Simples Nacional
 
@@ -157,6 +174,21 @@ Só iniciar se houver necessidade real e amostras aprovadas:
 - perfis de crédito, débito, risco, partes e reconciliação sobre os grupos autorizados.
 
 Esses itens não devem reintroduzir o MCP como autoridade paralela.
+
+## Incremento de compras e NCM
+
+O [PLANO-IMPLEMENTACAO-COMPRAS-NCM.md](PLANO-IMPLEMENTACAO-COMPRAS-NCM.md) foi implementado e validado nesta rodada:
+
+- [x] total bruto de compras documentais por documento único;
+- [x] devoluções e candidato líquido documental de compras;
+- [x] comparação compras × vendas no mesmo estabelecimento e competência;
+- [x] snapshot oficial e vigente da NCM;
+- [x] triagem descrição × NCM não bloqueante;
+- [x] fila local e confirmação do analista sem presunção de benefício IBS/CBS;
+- [x] migração dos schemas e do lote incremental.
+
+O incremento não implementa crédito, benefício, margem, estoque, omissão ou
+reclassificação automática.
 
 ## Critérios de encerramento desta etapa
 

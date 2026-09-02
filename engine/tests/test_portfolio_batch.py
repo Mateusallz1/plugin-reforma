@@ -110,6 +110,15 @@ def test_batch_discovers_and_processes_multiple_periods_incrementally(
         validation["documents"]["analysis_groups"]["NFSE_PRESTADOS"]["document_status"]
         == "SEM_DOCUMENTO"
     )
+    acquisition = json.loads(
+        (first / "05_REVISAO_AQUISICOES" / "acquisition-summary.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert (
+        acquisition["ruleset_lock"]["cfop"]["snapshot_id"]
+        == "CFOP-IT-2023.002-V2.00-2026-08-25"
+    )
 
 
 def test_batch_reprocesses_only_changed_period(tmp_path: Path) -> None:

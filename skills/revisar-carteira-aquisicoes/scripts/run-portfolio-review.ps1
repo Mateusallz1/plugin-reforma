@@ -27,13 +27,21 @@ $engineLauncher = [IO.Path]::GetFullPath(
 $ruleset = [IO.Path]::GetFullPath(
     (Join-Path $PSScriptRoot "..\..\revisar-aquisicoes\references\snapshots\cclass-trib-2026-06-22.json")
 )
+$cfopRuleset = [IO.Path]::GetFullPath(
+    (Join-Path $PSScriptRoot "..\..\revisar-receitas\references\snapshots\cfop-2026-08-25.json")
+)
+$analystRules = [IO.Path]::GetFullPath(
+    (Join-Path $PSScriptRoot "..\..\revisar-receitas\references\rules\revenue-cfop-rules-v1.json")
+)
 
 if ($Action -eq "List") {
     $arguments = @(
         $PortfolioFolder,
         "--page", $Page,
         "--page-size", $PageSize,
-        "--ruleset", $ruleset
+        "--ruleset", $ruleset,
+        "--cfop-ruleset", $cfopRuleset,
+        "--analyst-rules", $analystRules
     )
     & $engineLauncher -Command "review-portfolio" -CommandArguments $arguments
     exit $LASTEXITCODE
@@ -54,7 +62,9 @@ $arguments = @(
     "--nature", $Nature,
     "--scope", $Scope,
     "--approved-by", $ApprovedBy,
-    "--ruleset", $ruleset
+    "--ruleset", $ruleset,
+    "--cfop-ruleset", $cfopRuleset,
+    "--analyst-rules", $analystRules
 )
 if ($Note) {
     $arguments += @("--note", $Note)

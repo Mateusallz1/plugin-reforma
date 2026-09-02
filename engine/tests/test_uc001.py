@@ -83,7 +83,7 @@ def nfe_xml(
     <ide><cUF>35</cUF><cNF>12345678</cNF><natOp>VENDA</natOp><mod>{model}</mod><serie>1</serie><nNF>1</nNF><dhEmi>{issue_date}T12:00:00-03:00</dhEmi><tpNF>1</tpNF></ide>
     <emit><CNPJ>{issuer}</CNPJ><xNome>{issuer_name}</xNome></emit>
     <dest><CNPJ>{recipient}</CNPJ><xNome>{recipient_name}</xNome></dest>
-    <det nItem="1"><prod><cProd>1</cProd><xProd>ITEM SINTETICO</xProd><NCM>00000000</NCM><CFOP>5102</CFOP><qCom>1.00</qCom><vUnCom>{amount}</vUnCom><vProd>{amount}</vProd></prod><imposto/></det>
+    <det nItem="1"><prod><cProd>1</cProd><xProd>ITEM SINTETICO</xProd><NCM>01012100</NCM><CFOP>5102</CFOP><qCom>1.00</qCom><vUnCom>{amount}</vUnCom><vProd>{amount}</vProd></prod><imposto/></det>
     <total><ICMSTot><vProd>{amount}</vProd><vNF>{amount}</vNF></ICMSTot></total>
   </infNFe>
 {nfe_close}

@@ -278,6 +278,8 @@ def _apply_saved_rules(
     database: Path,
     rows: list[dict[str, Any]],
     ruleset_path: Path | str | None,
+    cfop_ruleset_path: Path | str | None = None,
+    analyst_rules_path: Path | str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     with _connection(database) as connection:
         rules = [
@@ -328,7 +330,12 @@ def _apply_saved_rules(
         }
         for company_ref, company_path in sorted(companies.items()):
             try:
-                result = review_acquisitions_folder(company_path, ruleset)
+                result = review_acquisitions_folder(
+                    company_path,
+                    ruleset,
+                    cfop_ruleset_path=cfop_ruleset_path,
+                    analyst_rules_path=analyst_rules_path,
+                )
                 write_acquisition_outputs(
                     result, company_path / "05_REVISAO_AQUISICOES"
                 )
@@ -376,6 +383,8 @@ def _index_portfolio(
     root: Path,
     database: Path,
     ruleset_path: Path | str | None = None,
+    cfop_ruleset_path: Path | str | None = None,
+    analyst_rules_path: Path | str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     occurrences = _find_pending_occurrences(root)
     indexed_at = _utc_now()
@@ -419,7 +428,13 @@ def _index_portfolio(
         rows = connection.execute(
             "SELECT * FROM occurrences WHERE active = 1 ORDER BY group_id, occurrence_ref"
         ).fetchall()
-    return _apply_saved_rules(database, [dict(row) for row in rows], ruleset_path)
+    return _apply_saved_rules(
+        database,
+        [dict(row) for row in rows],
+        ruleset_path,
+        cfop_ruleset_path,
+        analyst_rules_path,
+    )
 
 
 def _amount_total(rows: list[dict[str, Any]]) -> str:
@@ -524,13 +539,21 @@ def review_portfolio(
     page: int = 1,
     page_size: int = 10,
     ruleset_path: Path | str | None = None,
+    cfop_ruleset_path: Path | str | None = None,
+    analyst_rules_path: Path | str | None = None,
 ) -> dict[str, Any]:
     if page < 1 or not 1 <= page_size <= 100:
         raise ValidationError(
             "Página deve ser positiva e o tamanho deve ficar entre 1 e 100"
         )
     root, database, report_path, summary_path = _portfolio_paths(portfolio_root)
-    rows, automatic = _index_portfolio(root, database, ruleset_path)
+    rows, automatic = _index_portfolio(
+        root,
+        database,
+        ruleset_path,
+        cfop_ruleset_path,
+        analyst_rules_path,
+    )
     groups = _group_occurrences(rows)
     start = (page - 1) * page_size
     selected = groups[start : start + page_size]
@@ -709,6 +732,8 @@ def approve_portfolio_group(
     company_ref: str | None = None,
     occurrence_ref: str | None = None,
     ruleset_path: Path | str | None = None,
+    cfop_ruleset_path: Path | str | None = None,
+    analyst_rules_path: Path | str | None = None,
     request_id: str | None = None,
 ) -> dict[str, Any]:
     group_id = _normalized(group_id)
@@ -763,7 +788,13 @@ def approve_portfolio_group(
         if not ruleset.is_file():
             raise ValidationError("O snapshot oficial informado não existe")
     if selected is None:
-        rows, _ = _index_portfolio(root, database, ruleset_path)
+        rows, _ = _index_portfolio(
+            root,
+            database,
+            ruleset_path,
+            cfop_ruleset_path,
+            analyst_rules_path,
+        )
         selected = [row for row in rows if row["group_id"] == group_id]
         if not selected:
             raise ValidationError("O grupo informado não está pendente nesta carteira")
@@ -840,7 +871,12 @@ def approve_portfolio_group(
         companies = {row["company_ref"]: Path(row["company_path"]) for row in selected}
         for selected_company_ref, company_path in sorted(companies.items()):
             try:
-                result = review_acquisitions_folder(company_path, ruleset)
+                result = review_acquisitions_folder(
+                    company_path,
+                    ruleset,
+                    cfop_ruleset_path=cfop_ruleset_path,
+                    analyst_rules_path=analyst_rules_path,
+                )
                 write_acquisition_outputs(
                     result, company_path / "05_REVISAO_AQUISICOES"
                 )

@@ -97,6 +97,7 @@ def test_uc003b_reviews_revenue_deterministically_and_uses_document_totals(
         "other_revenue": "0.00",
         "gross_operational_revenue": "1300.00",
         "sales_returns_inbound": "0.00",
+        "purchase_returns_outbound": "0.00",
         "net_documentary_revenue_candidate": "1300.00",
         "excluded_non_revenue_operations": "0.00",
         "pending_revenue_treatment": "0.00",
@@ -186,7 +187,7 @@ def test_uc003b_keeps_mixed_cfop_document_pending(tmp_path: Path) -> None:
     key = access_key(COMPANY, "55", 97)
     xml = nfe_xml(key, "55", COMPANY, OTHER, "2026-03-05", "100.00")
     second_item = """
-    <det nItem="2"><prod><cProd>2</cProd><xProd>REMESSA SINTETICA</xProd><NCM>00000000</NCM><CFOP>5901</CFOP><qCom>1.00</qCom><vUnCom>50.00</vUnCom><vProd>50.00</vProd></prod><imposto/></det>"""
+    <det nItem="2"><prod><cProd>2</cProd><xProd>REMESSA SINTETICA</xProd><NCM>01012100</NCM><CFOP>5901</CFOP><qCom>1.00</qCom><vUnCom>50.00</vUnCom><vProd>50.00</vProd></prod><imposto/></det>"""
     xml = xml.replace("    <total>", second_item + "\n    <total>")
     xml = xml.replace(
         "<total><ICMSTot><vProd>100.00</vProd><vNF>100.00</vNF>",
@@ -400,7 +401,7 @@ def test_uc003b_does_not_double_count_document_components_across_items(
     xml = xml_path.read_text(encoding="utf-8")
     second_item = (
         '<det nItem="2"><prod><cProd>2</cProd><xProd>ITEM DOIS</xProd>'
-        "<NCM>00000000</NCM><CFOP>5102</CFOP><qCom>1.00</qCom>"
+        "<NCM>01012100</NCM><CFOP>5102</CFOP><qCom>1.00</qCom>"
         "<vUnCom>50.00</vUnCom><vProd>50.00</vProd><indTot>1</indTot>"
         "</prod><imposto/></det>"
     )
@@ -439,7 +440,7 @@ def test_uc003b_excludes_indtot_zero_item_from_document_total_check(
     xml = xml_path.read_text(encoding="utf-8")
     second_item = (
         '<det nItem="2"><prod><cProd>2</cProd><xProd>ITEM FORA DO TOTAL</xProd>'
-        "<NCM>00000000</NCM><CFOP>5102</CFOP><qCom>1.00</qCom>"
+        "<NCM>01012100</NCM><CFOP>5102</CFOP><qCom>1.00</qCom>"
         "<vUnCom>50.00</vUnCom><vProd>50.00</vProd><indTot>0</indTot>"
         "</prod><imposto/></det>"
     )

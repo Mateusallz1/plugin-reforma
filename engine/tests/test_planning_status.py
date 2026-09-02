@@ -64,6 +64,13 @@ def write_acquisition(folder: Path, *, analyst_review: bool = True) -> None:
             "schema_version": ACQUISITION_SCHEMA_VERSION,
             "phase": "ACQUISITION_REVIEW",
             "review_id": "ACQ-SYNTHETIC",
+            "documentary_totals": {
+                "gross_documentary_purchases": "125.00",
+                "pending_purchase_treatment": "0.00",
+                "non_purchase_entry_operations": "0.00",
+                "document_count": 1,
+                "pending_document_count": 0,
+            },
             "gates": {
                 "uc003_execution_ready": True,
                 "analyst_review_required": analyst_review,
@@ -80,6 +87,16 @@ def write_revenue(folder: Path, *, ready: bool = True) -> None:
             "schema_version": REVENUE_SCHEMA_VERSION,
             "phase": "REVENUE_REVIEW",
             "review_id": "REV-SYNTHETIC",
+            "totals": {
+                "gross_revenue_goods": "500.00",
+                "gross_revenue_services": "375.00",
+                "gross_revenue_transport": "0.00",
+                "other_revenue": "0.00",
+                "gross_operational_revenue": "875.00",
+                "sales_returns_inbound": "0.00",
+                "purchase_returns_outbound": "0.00",
+                "net_documentary_revenue_candidate": "875.00",
+            },
             "gates": {"revenue_population_ready": ready},
         },
     )
@@ -380,6 +397,31 @@ def test_status_routes_legacy_acquisition_schema_to_reprocessing(
     assert "RUN_ACQUISITION_REVIEW" in {
         item["action"] for item in result["available_actions"]
     }
+
+
+def test_status_shows_purchase_sales_comparison_without_new_gate(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "company"
+    write_validation(folder)
+    write_content(folder)
+    write_acquisition(folder, analyst_review=False)
+    write_revenue(folder, ready=True)
+
+    result = evaluate_planning_status(folder)
+    comparison = result["documentary_summary"]["purchase_sales_comparison"]
+
+    assert comparison["status"] == "AVAILABLE"
+    assert comparison["gross_documentary_purchases"] == "125.00"
+    assert comparison["gross_operational_revenue"] == "875.00"
+    assert comparison["purchase_to_revenue_ratio"] == "0.1429"
+    assert result["status"] == "NEEDS_USER_INPUT"
+
+    report = write_planning_status_outputs(result, folder / "08_STATUS_PLANEJAMENTO")[
+        1
+    ].read_text(encoding="utf-8")
+    assert "### Compras documentais × vendas documentais" in report
+    assert "| Relação compras/receita | 0.1429 |" in report
 
 
 @pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="Windows launcher")

@@ -12,10 +12,17 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from .core import ValidationError, _format_decimal, _parse_decimal
+from .content import CONTENT_SCHEMA_VERSION
+from .core import (
+    DOCUMENT_SCHEMA_VERSION,
+    ValidationError,
+    _format_decimal,
+    _parse_decimal,
+)
+from .operation_classification import classify_acquisition_product_item
 
 ACQUISITION_SCHEMA = "br.com.planejamento-reforma-tributaria/acquisition-review"
-ACQUISITION_SCHEMA_VERSION = "1.1.0"
+ACQUISITION_SCHEMA_VERSION = "1.2.0"
 DECISION_FILE = Path("00_CONTROLE") / "classificacao-aquisicoes.csv"
 ACQUISITION_CATEGORIES = {
     "PRODUCT": "PURCHASE_GOODS",
@@ -101,6 +108,32 @@ def _load_ruleset(path: Path) -> tuple[dict[str, Any], str]:
     if not isinstance(records, list) or not records:
         raise ValidationError("Snapshot oficial não contém classificações")
     return ruleset, _sha256(path)
+
+
+def _load_cfop_snapshot(path: Path) -> tuple[dict[str, Any], str]:
+    snapshot = _load_json(path, "snapshot oficial de CFOP")
+    if snapshot.get("schema") != (
+        "br.com.planejamento-reforma-tributaria/official-cfop-snapshot"
+    ):
+        raise ValidationError("Snapshot CFOP possui schema incompatível")
+    if not isinstance(snapshot.get("records"), list) or not snapshot["records"]:
+        raise ValidationError("Snapshot CFOP não contém registros")
+    return snapshot, _sha256(path)
+
+
+def _load_cfop_analyst_rules(path: Path) -> tuple[dict[str, Any], str]:
+    rules = _load_json(path, "ruleset de receita do analista")
+    if rules.get("schema") != (
+        "br.com.planejamento-reforma-tributaria/revenue-cfop-rules"
+    ):
+        raise ValidationError("Ruleset de receita possui schema incompatível")
+    for field in ("usual_sale_cfops", "sales_return_inbound_cfops"):
+        values = rules.get(field)
+        if not isinstance(values, list) or any(
+            re.fullmatch(r"\d{4}", str(value)) is None for value in values
+        ):
+            raise ValidationError(f"Ruleset de receita possui {field} inválido")
+    return rules, _sha256(path)
 
 
 def _load_decisions(folder: Path) -> tuple[dict[str, dict[str, str]], dict[str, Any]]:
@@ -197,8 +230,71 @@ def _sum_amounts(records: list[dict[str, Any]]) -> str:
     return _format_decimal(total) or "0.00"
 
 
+def _documentary_totals(
+    validation_records: dict[str, dict[str, Any]],
+    document_statuses: dict[str, str],
+) -> dict[str, Any]:
+    totals = {
+        "gross_documentary_purchases": Decimal(0),
+        "pending_purchase_treatment": Decimal(0),
+        "non_purchase_entry_operations": Decimal(0),
+    }
+    counts = Counter()
+    by_type: dict[str, Decimal] = {}
+    by_group: dict[str, Decimal] = {}
+    pending_count = 0
+    for document_ref, status in document_statuses.items():
+        document = validation_records.get(document_ref)
+        if document is None:
+            continue
+        amount = _parse_decimal(document.get("gross_amount")) or Decimal(0)
+        if status == "CONFIRMED_PURCHASE":
+            totals["gross_documentary_purchases"] += amount
+            counts["confirmed"] += 1
+            type_key = str(document.get("document_type") or "UNKNOWN")
+            group_key = str(document.get("analysis_group") or "UNKNOWN")
+            by_type[type_key] = by_type.get(type_key, Decimal(0)) + amount
+            by_group[group_key] = by_group.get(group_key, Decimal(0)) + amount
+        elif status == "PENDING_PURCHASE_TREATMENT":
+            totals["pending_purchase_treatment"] += amount
+            pending_count += 1
+        elif status == "NON_PURCHASE_ENTRY":
+            totals["non_purchase_entry_operations"] += amount
+
+    return {
+        "amount_basis": "UNIQUE_DOCUMENT_TOTAL",
+        "document_count": counts["confirmed"],
+        "gross_documentary_purchases": _format_decimal(
+            totals["gross_documentary_purchases"]
+        )
+        or "0.00",
+        "pending_document_count": pending_count,
+        "pending_purchase_treatment": _format_decimal(
+            totals["pending_purchase_treatment"]
+        )
+        or "0.00",
+        "non_purchase_entry_operations": _format_decimal(
+            totals["non_purchase_entry_operations"]
+        )
+        or "0.00",
+        "by_document_type": {
+            key: _format_decimal(value) or "0.00"
+            for key, value in sorted(by_type.items())
+        },
+        "by_analysis_group": {
+            key: _format_decimal(value) or "0.00"
+            for key, value in sorted(by_group.items())
+        },
+        "cross_document_linkage": "NOT_PERFORMED",
+    }
+
+
 def review_acquisitions_folder(
-    folder: Path | str, ruleset_path: Path | str
+    folder: Path | str,
+    ruleset_path: Path | str,
+    *,
+    cfop_ruleset_path: Path | str | None = None,
+    analyst_rules_path: Path | str | None = None,
 ) -> dict[str, Any]:
     base = Path(folder).expanduser().resolve()
     if not base.is_dir():
@@ -206,13 +302,37 @@ def review_acquisitions_folder(
     summary_path = base / "04_CONTEUDO" / "content-summary.json"
     records_path = base / "04_CONTEUDO" / "normalized-items.local.jsonl"
     content_summary = _load_json(summary_path, "04_CONTEUDO/content-summary.json")
-    if content_summary.get("use_case") != "UC-002":
-        raise ValidationError("content-summary.json não pertence ao UC-002")
+    if (
+        content_summary.get("use_case") != "UC-002"
+        or content_summary.get("schema_version") != CONTENT_SCHEMA_VERSION
+    ):
+        raise ValidationError(
+            "content-summary.json não pertence à versão vigente do UC-002"
+        )
     if not content_summary.get("gates", {}).get("uc003_analysis_authorized"):
         raise ValidationError("UC-002 não autorizou o UC-003")
     content_records = _load_content_records(records_path)
     if len(content_records) != content_summary.get("records_total"):
         raise ValidationError("Resumo e JSONL do UC-002 possuem contagens divergentes")
+
+    validation = _load_json(
+        base / "03_SAIDAS" / "validation-result.json",
+        "03_SAIDAS/validation-result.json",
+    )
+    if (
+        validation.get("use_case") != "UC-001"
+        or validation.get("schema_version") != DOCUMENT_SCHEMA_VERSION
+    ):
+        raise ValidationError(
+            "validation-result.json não pertence à versão vigente do UC-001"
+        )
+    if validation.get("validation_id") != content_summary.get("validation_id"):
+        raise ValidationError("UC-003 exige encadeamento entre UC-001 e UC-002")
+    validation_records = {
+        record["document_ref"]: record
+        for record in validation.get("documents", {}).get("records", [])
+        if record.get("included") and record.get("authorized_for_planning")
+    }
 
     ruleset_file = Path(ruleset_path).expanduser().resolve()
     ruleset, ruleset_hash = _load_ruleset(ruleset_file)
@@ -224,12 +344,88 @@ def review_acquisitions_folder(
         for record in ruleset["classification_records"]
     }
 
+    cfop_index: dict[str, dict[str, Any]] = {}
+    inbound_return_cfops: set[str] = set()
+    cfop_lock: dict[str, Any] | None = None
+    if cfop_ruleset_path is not None:
+        cfop_snapshot, cfop_hash = _load_cfop_snapshot(
+            Path(cfop_ruleset_path).expanduser().resolve()
+        )
+        analyst_rules_file = (
+            Path(analyst_rules_path).expanduser().resolve()
+            if analyst_rules_path is not None
+            else None
+        )
+        if analyst_rules_file is None:
+            raise ValidationError(
+                "Revisão de aquisições com CFOP exige ruleset do analista"
+            )
+        analyst_rules, analyst_rules_hash = _load_cfop_analyst_rules(analyst_rules_file)
+        cfop_index = {
+            str(record["cfop"]): record for record in cfop_snapshot["records"]
+        }
+        inbound_return_cfops = {
+            str(value) for value in analyst_rules["sales_return_inbound_cfops"]
+        }
+        cfop_lock = {
+            "snapshot_id": cfop_snapshot.get("snapshot_id"),
+            "snapshot_sha256": cfop_hash,
+            "verified_at": cfop_snapshot.get("verified_at"),
+            "source": cfop_snapshot.get("source"),
+            "analyst_ruleset_id": analyst_rules.get("ruleset_id"),
+            "analyst_rules_sha256": analyst_rules_hash,
+            "analyst_rules_source": analyst_rules.get("source"),
+        }
+
     acquisition_records: list[dict[str, Any]] = []
+    product_operation_by_item: dict[str, tuple[str, dict[str, Any] | None]] = {}
+    product_operations_by_document: dict[str, list[str]] = {}
+    if cfop_index:
+        for source in content_records:
+            if (
+                source.get("direction") != "ENTRADA"
+                or source.get("record_kind") != "PRODUCT"
+            ):
+                continue
+            operation = classify_acquisition_product_item(
+                source,
+                cfop_index,
+                inbound_return_cfops,
+                period_start,
+                period_end,
+            )
+            product_operation_by_item[source["item_ref"]] = operation
+            product_operations_by_document.setdefault(
+                source["document_ref"], []
+            ).append(operation[0])
+
+    document_statuses: dict[str, str] = {}
+    for source in content_records:
+        if source.get("direction") != "ENTRADA":
+            continue
+        document_ref = source["document_ref"]
+        if source.get("record_kind") != "PRODUCT":
+            document_statuses.setdefault(document_ref, "CONFIRMED_PURCHASE")
+            continue
+        operations = product_operations_by_document.get(document_ref)
+        if not operations:
+            document_statuses.setdefault(document_ref, "CONFIRMED_PURCHASE")
+        elif all(operation == "PURCHASE_CONTEXT" for operation in operations):
+            document_statuses[document_ref] = "CONFIRMED_PURCHASE"
+        elif all(operation == "NON_PURCHASE_ENTRY" for operation in operations):
+            document_statuses[document_ref] = "NON_PURCHASE_ENTRY"
+        else:
+            document_statuses[document_ref] = "PENDING_PURCHASE_TREATMENT"
+
     acquisition_input_refs = {
         record["item_ref"]
         for record in content_records
         if record.get("direction") == "ENTRADA"
         and record.get("record_kind") in ACQUISITION_CATEGORIES
+        and product_operation_by_item.get(
+            record["item_ref"], ("PURCHASE_CONTEXT", None)
+        )[0]
+        != "NON_PURCHASE_ENTRY"
     }
     unknown_decisions = sorted(set(decisions) - acquisition_input_refs)
     if unknown_decisions:
@@ -243,10 +439,20 @@ def review_acquisitions_folder(
         category = ACQUISITION_CATEGORIES.get(kind)
         if category is None:
             continue
+        operation_name, official_operation = product_operation_by_item.get(
+            source["item_ref"], ("PURCHASE_CONTEXT", None)
+        )
+        if operation_name == "NON_PURCHASE_ENTRY":
+            continue
         record = dict(source)
         record["acquisition_category"] = category
+        record["purchase_operation_status"] = operation_name
+        record["cfop_official"] = official_operation
         decision = decisions.get(record["item_ref"])
-        if not record.get("eligible_for_uc003", True):
+        if operation_name == "PENDING_PURCHASE_TREATMENT":
+            nature = None
+            nature_status = "PENDING_PURCHASE_TREATMENT"
+        elif not record.get("eligible_for_uc003", True):
             nature = None
             nature_status = "RESTRICTED_INPUT"
         elif decision is None:
@@ -281,10 +487,13 @@ def review_acquisitions_folder(
         if record["legal_evidence_status"] != "CONFIRMED_DECLARED"
     ]
     review_material = {
+        "validation_id": validation["validation_id"],
         "content_analysis_id": content_summary["content_analysis_id"],
         "ruleset_hash": ruleset_hash,
         "decisions_hash": decision_summary["source_hash"],
         "item_refs": [record["item_ref"] for record in acquisition_records],
+        "document_statuses": document_statuses,
+        "cfop_ruleset": cfop_lock,
         "schema_version": ACQUISITION_SCHEMA_VERSION,
     }
     review_id = (
@@ -317,6 +526,9 @@ def review_acquisitions_folder(
         "classification_records": len(ruleset["classification_records"]),
         "cst_records": len(ruleset["cst_records"]),
     }
+    if cfop_lock is not None:
+        ruleset_lock["cfop"] = cfop_lock
+    documentary_totals = _documentary_totals(validation_records, document_statuses)
     result = {
         "schema": ACQUISITION_SCHEMA,
         "schema_version": ACQUISITION_SCHEMA_VERSION,
@@ -337,6 +549,15 @@ def review_acquisitions_folder(
         "non_acquisition_records": len(content_records) - len(acquisition_records),
         "category_counts": dict(sorted(category_counts.items())),
         "category_amounts": category_amounts,
+        "documentary_totals": documentary_totals,
+        "purchase_operation_status_counts": dict(
+            sorted(
+                Counter(
+                    record.get("purchase_operation_status", "PURCHASE_CONTEXT")
+                    for record in acquisition_records
+                ).items()
+            )
+        ),
         "nature_status_counts": dict(
             sorted(
                 Counter(
@@ -375,6 +596,7 @@ def review_acquisitions_folder(
 
 
 def _markdown_report(result: dict[str, Any]) -> str:
+    documentary_totals = result["documentary_totals"]
     lines = [
         "# Relatório de Revisão das Aquisições",
         "",
@@ -397,6 +619,23 @@ def _markdown_report(result: dict[str, Any]) -> str:
             )
     else:
         lines.append("| `SEM_DOCUMENTO` | 0 | 0.00 |")
+    lines.extend(
+        [
+            "",
+            "## Totais documentais de compras",
+            "",
+            "| Indicador | Valor |",
+            "|---|---:|",
+            f"| Documentos confirmados como compra | {documentary_totals['document_count']} |",
+            f"| Total bruto documental | {documentary_totals['gross_documentary_purchases']} |",
+            f"| Documentos pendentes de tratamento | {documentary_totals['pending_document_count']} |",
+            f"| Valor pendente de tratamento | {documentary_totals['pending_purchase_treatment']} |",
+            f"| Operações de entrada fora de compras | {documentary_totals['non_purchase_entry_operations']} |",
+            f"| Vínculo econômico entre documentos | `{documentary_totals['cross_document_linkage']}` |",
+            "",
+            "Subtotais acima usam o total de cada documento uma única vez. Compras sem crédito permanecem incluídas; este relatório não conclui custo econômico ou direito a crédito.",
+        ]
+    )
     lines.extend(
         [
             "",

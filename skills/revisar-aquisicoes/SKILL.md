@@ -10,12 +10,12 @@ Execute o UC-003 somente quando `04_CONTEUDO/content-summary.json` indicar `uc00
 ## Fontes antes da execução
 
 1. Consulte as páginas oficiais da legislação da RTC, orientações de 2026 e tabelas vigentes do Portal NF-e.
-2. Confirme que a versão e a data da tabela cClassTrib coincidem com o snapshot em `references/snapshots/`.
-3. Se a fonte oficial estiver mais recente, não valide pares com o snapshot antigo. Informe `SOURCE_UPDATE_REQUIRED` e trate a atualização do snapshot como manutenção explícita do plugin.
+2. Confirme que a versão e a data das tabelas cClassTrib e CFOP coincidem com os snapshots usados pelo launcher.
+3. Se a fonte oficial estiver mais recente, não valide pares ou operações com snapshot antigo. Informe `SOURCE_UPDATE_REQUIRED` e trate a atualização dos snapshots como manutenção explícita do plugin.
 
 ## Caminho rápido
 
-1. Execute uma vez `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-acquisition-review.ps1 -Folder <pasta>`.
+1. Execute uma vez `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-acquisition-review.ps1 -Folder <pasta>`; o launcher fixa também o snapshot CFOP e o ruleset de classificação de operações.
 2. Leia `05_REVISAO_AQUISICOES/acquisition-summary.json`, `ruleset-lock.json` e `relatorio-revisao-aquisicoes.md`.
 3. Para código de saída `0`, informe categorias, valores documentais, evidência IBS/CBS, pendências e gates. Não reproduza os JSONL ou CSV locais na conversa.
 4. Para código `2`, informe por que a revisão não pode alimentar a etapa seguinte e pare.
@@ -24,6 +24,8 @@ Execute o UC-003 somente quando `04_CONTEUDO/content-summary.json` indicar `uc00
 ## Regras
 
 - Revise somente registros de direção `ENTRADA`: produtos como `PURCHASE_GOODS`, serviços como `PURCHASE_SERVICES` e transportes como `PURCHASE_TRANSPORT`.
+- Nas NF-e/NFC-e, não trate toda entrada como compra: devolução de venda, remessa, retorno, transferência e operação sem compra ficam fora do total confirmado e aparecem como contexto ou pendência.
+- O total documental de compras usa o `vNF` de cada documento único; `category_amounts` continua sendo subtotal dos itens para análise operacional.
 - Não suponha a natureza da aquisição. Sem decisão `APROVADO` em `00_CONTROLE/classificacao-aquisicoes.csv`, mantenha `PENDING_ANALYST_CLASSIFICATION`.
 - A validação CST/cClassTrib comprova somente que o par declarado existe, estava vigente na competência e é aplicável ao tipo de DF-e no snapshot oficial.
 - Nunca converta entrada, par válido ou natureza aprovada em direito automático a crédito.

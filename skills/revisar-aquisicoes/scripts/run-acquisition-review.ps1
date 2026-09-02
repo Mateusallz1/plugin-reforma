@@ -13,7 +13,21 @@ $engineLauncher = [IO.Path]::GetFullPath(
 $ruleset = [IO.Path]::GetFullPath(
     (Join-Path $PSScriptRoot "..\references\snapshots\cclass-trib-2026-06-22.json")
 )
-$arguments = @($Folder, "--ruleset", $ruleset)
+$cfopRuleset = [IO.Path]::GetFullPath(
+    (Join-Path $PSScriptRoot "..\..\revisar-receitas\references\snapshots\cfop-2026-08-25.json")
+)
+$analystRules = [IO.Path]::GetFullPath(
+    (Join-Path $PSScriptRoot "..\..\revisar-receitas\references\rules\revenue-cfop-rules-v1.json")
+)
+$arguments = @(
+    $Folder,
+    "--ruleset",
+    $ruleset,
+    "--cfop-ruleset",
+    $cfopRuleset,
+    "--analyst-rules",
+    $analystRules
+)
 if ($OutputDir) {
     $arguments += @("--output-dir", $OutputDir)
 }

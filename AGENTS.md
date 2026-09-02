@@ -20,7 +20,7 @@
 - Relatórios usam `report_population_policy=COMPLEMENTARY`: divergências são avisos, XML válido não é filtrado e nota declarada sem XML não é incluída. Não implemente `WHITELIST` sem solicitação explícita e novos testes.
 - O UC-002 extrai `PRODUCT`, `SERVICE` e `TRANSPORT` somente quando `authorized_for_planning=true` e `operational_analysis_required=true` no UC-001.
 - Observações do UC-002 não impedem o UC-003; use `uc003_analysis_authorized` como gate operacional e preserve `lcp214_classification_ready` apenas como indicador de completude.
-- Produto com NCM ausente/malformado ou divergente de catálogo `APROVADO` fica restrito por item; não bloqueie serviços, transportes ou outros produtos elegíveis.
+- Produto com NCM ausente/malformado, inexistente ou fora de vigência no snapshot fica restrito por item; divergência de catálogo `APROVADO` também restringe somente o item. Não bloqueie serviços, transportes ou outros produtos elegíveis.
 - Sem catálogo Produto × NCM ou sem correspondência por `cProd`, registre inconclusão e permita avanço provisório. Não confirme incompatibilidade por similaridade textual.
 - O UC-003 revisa somente entradas e não infere natureza econômica ou direito a crédito. Decisões exigem `status=APROVADO` no arquivo local do analista; a fila central pode materializar esse arquivo a partir de uma aprovação humana registrada em SQLite local.
 - A fila central usa somente a raiz de carteira indicada pelo usuário. `ITEM`, `COMPANY` e `PORTFOLIO` são alcances distintos; nunca escolha ou amplie `PORTFOLIO` silenciosamente.
@@ -57,7 +57,7 @@ Antes de empacotar, valide as skills e o plugin com os validadores oficiais. Dep
 
 ## Ordem de trabalho pendente
 
-Leia [docs/PLANO-DE-CONCLUSAO.md](docs/PLANO-DE-CONCLUSAO.md) antes de iniciar uma nova alteração. Depois de homologar a fila central e o lote incremental, o próximo incremento funcional é aplicar regras versionadas da LC 214 sobre a população normalizada, mantendo evidência, vigência e aprovação do analista separadas da extração.
+Leia [docs/PLANO-DE-CONCLUSAO.md](docs/PLANO-DE-CONCLUSAO.md) antes de iniciar uma nova alteração. O incremento de [docs/PLANO-IMPLEMENTACAO-COMPRAS-NCM.md](docs/PLANO-IMPLEMENTACAO-COMPRAS-NCM.md) está implementado: compras documentais totais, comparação não bloqueante com vendas e triagem NCM × descrição sem reclassificação automática. Só depois avance para regras materiais da LC 214, mantendo evidência, vigência e aprovação do analista separadas da extração.
 
 ## Git e mudanças externas
 

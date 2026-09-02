@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import calendar
 import csv
 import hashlib
+import io
 import json
 import re
 from collections import Counter
+from datetime import date
 from decimal import Decimal
+from functools import lru_cache
+from importlib.resources import files as resource_files
 from pathlib import Path
 from typing import Any
 from xml.etree.ElementTree import ParseError
@@ -25,8 +30,12 @@ from .core import (
 )
 
 CONTENT_SCHEMA = "br.com.planejamento-reforma-tributaria/fiscal-content"
-CONTENT_SCHEMA_VERSION = "1.2.0"
+CONTENT_SCHEMA_VERSION = "1.3.0"
 PRODUCT_NCM_CATALOG = Path("00_CONTROLE") / "catalogo-produtos-ncm.csv"
+NCM_SNAPSHOT_NAME = "ncm-2026-09-01.json"
+NCM_SOURCE_URL = (
+    "https://portalunico.siscomex.gov.br/classif/api/publico/nomenclatura/download/json"
+)
 
 FIELD_COVERAGE = {
     "PRODUCT": (
@@ -39,6 +48,12 @@ FIELD_COVERAGE = {
         "benefit_code",
         "cclass_trib",
         "ibs_cbs_cst",
+        "insurance",
+        "ipi_amount",
+        "icms_st_amount",
+        "fcp_st_amount",
+        "import_duty_amount",
+        "ipi_returned_amount",
     ),
     "SERVICE": (
         "description",
@@ -178,6 +193,108 @@ def _catalog_digest(path: Path) -> str | None:
     return digest.hexdigest()
 
 
+def _parse_br_date(value: str) -> date | None:
+    try:
+        day, month, year = (int(part) for part in value.split("/"))
+        return date(year, month, day)
+    except (TypeError, ValueError):
+        return None
+
+
+@lru_cache(maxsize=1)
+def _load_ncm_snapshot() -> tuple[dict[str, dict[str, str]], dict[str, Any]]:
+    resource = resource_files("fiscal_document_intake").joinpath(
+        "data", NCM_SNAPSHOT_NAME
+    )
+    try:
+        raw = resource.read_bytes()
+        payload = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ValidationError(
+            "Snapshot oficial da NCM está ausente ou inválido"
+        ) from error
+    if not isinstance(payload, dict) or not isinstance(
+        payload.get("Nomenclaturas"), list
+    ):
+        raise ValidationError("Snapshot oficial da NCM possui formato incompatível")
+
+    catalog: dict[str, dict[str, str]] = {}
+    for entry in payload["Nomenclaturas"]:
+        if not isinstance(entry, dict):
+            continue
+        code = re.sub(r"\D", "", str(entry.get("Codigo") or ""))
+        if len(code) != 8:
+            continue
+        start = _parse_br_date(str(entry.get("Data_Inicio") or ""))
+        end = _parse_br_date(str(entry.get("Data_Fim") or ""))
+        if start is None or end is None:
+            continue
+        catalog[code] = {
+            "description": str(entry.get("Descricao") or "").strip(),
+            "effective_from": start.isoformat(),
+            "effective_to": end.isoformat(),
+        }
+    source_hash = hashlib.sha256(raw).hexdigest()
+    return catalog, {
+        "status": "LOADED",
+        "snapshot_id": NCM_SNAPSHOT_NAME.removesuffix(".json"),
+        "source": NCM_SOURCE_URL,
+        "verified_at": "2026-09-01",
+        "effective_label": payload.get("Data_Ultima_Atualizacao_NCM"),
+        "act": payload.get("Ato"),
+        "source_hash": source_hash,
+        "records": len(catalog),
+    }
+
+
+def _ncm_description_review(
+    record: dict[str, Any],
+    ncm_catalog: dict[str, dict[str, str]],
+    period: str | None,
+) -> dict[str, Any]:
+    ncm = str(record.get("ncm") or "")
+    description = str(record.get("description") or "").strip()
+    review: dict[str, Any] = {
+        "status": "INCONCLUSIVE",
+        "basis": "XML_DESCRIPTION_ONLY",
+        "suspected_field": None,
+        "reported_ncm": ncm or None,
+        "approved_ncm": None,
+        "evidence_ref": None,
+        "reason_codes": [],
+    }
+    if not description or re.fullmatch(r"\d{8}", ncm) is None:
+        review["status"] = "UNVERIFIABLE"
+        review["suspected_field"] = "NCM" if description else None
+        review["reason_codes"] = ["DESCRIPTION_OR_NCM_UNAVAILABLE"]
+        return review
+    official = ncm_catalog.get(ncm)
+    if official is None:
+        review["status"] = "UNVERIFIABLE"
+        review["suspected_field"] = "NCM"
+        review["reason_codes"] = ["NCM_NOT_EFFECTIVE"]
+        return review
+    period_start = None
+    period_end = None
+    if period and re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", period):
+        year, month = (int(value) for value in period.split("-"))
+        period_start = date(year, month, 1)
+        period_end = date(year, month, calendar.monthrange(year, month)[1])
+    effective_from = date.fromisoformat(official["effective_from"])
+    effective_to = date.fromisoformat(official["effective_to"])
+    if period_start is not None and not (
+        effective_from <= period_end and effective_to >= period_start
+    ):
+        review["status"] = "UNVERIFIABLE"
+        review["suspected_field"] = "NCM"
+        review["reason_codes"] = ["NCM_NOT_EFFECTIVE"]
+        return review
+    review["basis"] = "OFFICIAL_NCM_TEXT"
+    review["reason_codes"] = ["DESCRIPTION_REVIEW_PENDING_TECHNICAL_EVIDENCE"]
+    review["official_description"] = official["description"]
+    return review
+
+
 def _load_product_ncm_catalog(folder: Path) -> tuple[dict[str, str], dict[str, Any]]:
     path = folder / PRODUCT_NCM_CATALOG
     digest = _catalog_digest(path)
@@ -250,6 +367,29 @@ def _apply_product_ncm_policy(
         validation = {"status": "MISMATCH", "source": "ANALYST_APPROVED_CATALOG"}
         findings.append(_finding("PRODUCT_NCM_MISMATCH", "product_ncm", "RESTRICTION"))
     record["product_ncm_validation"] = validation
+    review = record.get("ncm_description_review")
+    if not isinstance(review, dict):
+        review = {
+            "status": "INCONCLUSIVE",
+            "basis": "XML_DESCRIPTION_ONLY",
+            "suspected_field": None,
+            "reported_ncm": ncm or None,
+            "approved_ncm": None,
+            "evidence_ref": None,
+            "reason_codes": [],
+        }
+    if catalog_loaded and product_code and product_code in catalog:
+        review["basis"] = "ANALYST_APPROVED_CATALOG"
+        review["approved_ncm"] = catalog[product_code]
+        if ncm == catalog[product_code]:
+            review["status"] = "ANALYST_CONFIRMED_MATCH"
+            review["suspected_field"] = None
+            review["reason_codes"] = ["CATALOG_NCM_MATCH"]
+        else:
+            review["status"] = "ANALYST_CONFIRMED_MISMATCH"
+            review["suspected_field"] = "NCM"
+            review["reason_codes"] = ["PRODUCT_NCM_MISMATCH"]
+    record["ncm_description_review"] = review
     restriction_codes = sorted(
         finding["code"] for finding in findings if finding["severity"] == "RESTRICTION"
     )
@@ -434,6 +574,7 @@ def _base_record(
             "status": "NOT_APPLICABLE",
             "source": None,
         },
+        "ncm_description_review": None,
     }
 
 
@@ -441,6 +582,7 @@ def _product_records(
     root: Any,
     document: dict[str, Any],
     validation_record: dict[str, Any],
+    ncm_catalog: dict[str, dict[str, str]],
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     info = _first_element(root, {"infNFe"})
     if info is None:
@@ -495,6 +637,7 @@ def _product_records(
                 ),
                 "includes_document_total": _direct_text(product, "indTot"),
                 "document_total_components": document_total_components,
+                "ncm_description_review": None,
                 "cclass_trib": cclass_trib,
                 "ibs_cbs_cst": ibs_cbs_cst,
                 "ibs_cbs": ibs_cbs,
@@ -550,6 +693,13 @@ def _product_records(
             pattern=r"\d{6}",
         )
         record["findings"] = findings
+        record["ncm_description_review"] = _ncm_description_review(
+            record,
+            ncm_catalog,
+            validation_record.get("emission_period"),
+        )
+        if "NCM_NOT_EFFECTIVE" in record["ncm_description_review"]["reason_codes"]:
+            findings.append(_finding("NCM_NOT_EFFECTIVE", "ncm", "RESTRICTION"))
         record["content_status"] = _content_status(findings)
         amount = _parse_decimal(record["gross_amount"])
         if amount is not None and record["includes_document_total"] != "0":
@@ -795,11 +945,13 @@ def extract_content_folder(folder: Path | str) -> dict[str, Any]:
     if not base.is_dir():
         raise ValidationError("A pasta informada não existe")
     validation = _load_validation_result(base)
+    ncm_catalog, ncm_snapshot = _load_ncm_snapshot()
     product_ncm_catalog, catalog_summary = _load_product_ncm_catalog(base)
     authorized_records = {
         record["document_ref"]: record
         for record in validation.get("documents", {}).get("records", [])
-        if record.get("authorized_for_planning")
+        if record.get("included")
+        and record.get("authorized_for_planning")
         and record.get("operational_analysis_required")
     }
     if not authorized_records:
@@ -829,7 +981,10 @@ def extract_content_folder(folder: Path | str) -> dict[str, Any]:
         if selected_documents[0]["document_type"] in {"NFE", "NFCE"}:
             document = selected_documents[0]
             records, reconciliation = _product_records(
-                root, document, authorized_records[document["document_ref"]]
+                root,
+                document,
+                authorized_records[document["document_ref"]],
+                ncm_catalog,
             )
             content_records.extend(records)
             reconciliations.append(reconciliation)
@@ -930,6 +1085,7 @@ def extract_content_folder(folder: Path | str) -> dict[str, Any]:
         "document_refs": sorted(authorized_records),
         "source_hashes": sorted(source_hashes),
         "product_ncm_catalog_hash": catalog_summary["source_hash"],
+        "ncm_snapshot_hash": ncm_snapshot["source_hash"],
         "schema_version": CONTENT_SCHEMA_VERSION,
     }
     content_analysis_id = (
@@ -984,6 +1140,17 @@ def extract_content_folder(folder: Path | str) -> dict[str, Any]:
             ),
         },
         "product_ncm_catalog": catalog_summary,
+        "ncm_snapshot": ncm_snapshot,
+        "ncm_description_status_counts": dict(
+            sorted(
+                Counter(
+                    record["ncm_description_review"]["status"]
+                    for record in content_records
+                    if record["record_kind"] == "PRODUCT"
+                    and isinstance(record.get("ncm_description_review"), dict)
+                ).items()
+            )
+        ),
         "component_count": sum(len(record["components"]) for record in content_records),
         "referenced_document_count": sum(
             record["referenced_document_count"] for record in content_records
@@ -1105,14 +1272,53 @@ def _markdown_report(result: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _ncm_review_queue(records: list[dict[str, Any]]) -> str:
+    columns = [
+        "item_ref",
+        "document_ref",
+        "reported_ncm",
+        "status",
+        "suspected_field",
+        "reason_codes",
+        "approved_ncm",
+        "evidence_ref",
+        "observacao",
+    ]
+    stream = io.StringIO(newline="")
+    writer = csv.DictWriter(
+        stream, fieldnames=columns, delimiter=";", lineterminator="\n"
+    )
+    writer.writeheader()
+    for record in records:
+        review = record.get("ncm_description_review")
+        if record.get("record_kind") != "PRODUCT" or not isinstance(review, dict):
+            continue
+        writer.writerow(
+            {
+                "item_ref": record["item_ref"],
+                "document_ref": record["document_ref"],
+                "reported_ncm": review.get("reported_ncm") or "",
+                "status": review.get("status") or "INCONCLUSIVE",
+                "suspected_field": review.get("suspected_field") or "",
+                "reason_codes": ",".join(review.get("reason_codes") or []),
+                "approved_ncm": review.get("approved_ncm") or "",
+                "evidence_ref": review.get("evidence_ref") or "",
+                "observacao": "",
+            }
+        )
+    return stream.getvalue()
+
+
 def write_content_outputs(
     result: dict[str, Any], output_dir: Path | str
-) -> tuple[Path, Path, Path]:
+) -> tuple[Path, Path, Path, Path, Path]:
     target = Path(output_dir).expanduser().resolve()
     target.mkdir(parents=True, exist_ok=True)
     summary_path = target / "content-summary.json"
     records_path = target / "normalized-items.local.jsonl"
     report_path = target / "relatorio-qualidade-conteudo.md"
+    queue_path = target / "fila-revisao-ncm-descricao.csv"
+    ncm_review_path = target / "ncm-description-review.local.jsonl"
     public_result = {
         key: value for key, value in result.items() if not key.startswith("_private_")
     }
@@ -1127,5 +1333,26 @@ def write_content_outputs(
         ),
         encoding="utf-8",
     )
+    queue_path.write_text(
+        _ncm_review_queue(result["_private_records"]), encoding="utf-8-sig"
+    )
+    ncm_review_path.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "item_ref": record["item_ref"],
+                    "document_ref": record["document_ref"],
+                    "description": record.get("description"),
+                    "ncm_description_review": record.get("ncm_description_review"),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            + "\n"
+            for record in result["_private_records"]
+            if record.get("record_kind") == "PRODUCT"
+        ),
+        encoding="utf-8",
+    )
     report_path.write_text(_markdown_report(result), encoding="utf-8")
-    return summary_path, records_path, report_path
+    return summary_path, records_path, report_path, queue_path, ncm_review_path

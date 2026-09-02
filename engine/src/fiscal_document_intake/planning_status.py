@@ -2,17 +2,23 @@ from __future__ import annotations
 
 import hashlib
 import json
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from .acquisition import ACQUISITION_SCHEMA_VERSION
 from .content import CONTENT_SCHEMA_VERSION
-from .core import DOCUMENT_SCHEMA_VERSION, ValidationError
+from .core import (
+    DOCUMENT_SCHEMA_VERSION,
+    ValidationError,
+    _format_decimal,
+    _parse_decimal,
+)
 from .revenue import REVENUE_SCHEMA_VERSION
 from .simple_reconciliation import SIMPLE_RECONCILIATION_SCHEMA_VERSION
 
 PLANNING_STATUS_SCHEMA = "br.com.planejamento-reforma-tributaria/planning-status"
-PLANNING_STATUS_SCHEMA_VERSION = "1.2.0"
+PLANNING_STATUS_SCHEMA_VERSION = "1.3.0"
 DOCUMENTARY_SUMMARY_SCHEMA = (
     "br.com.planejamento-reforma-tributaria/documentary-summary"
 )
@@ -59,6 +65,19 @@ def _required_input(
 
 def _mapping(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _decimal(value: Any) -> Decimal:
+    return _parse_decimal(value) or Decimal(0)
+
+
+def _ratio(purchases: Any, revenue: Any) -> str | None:
+    if purchases is None or revenue is None:
+        return None
+    denominator = _decimal(revenue)
+    if denominator <= 0:
+        return None
+    return f"{(_decimal(purchases) / denominator).quantize(Decimal('0.0001')):.4f}"
 
 
 def _documentary_summary(
@@ -151,6 +170,50 @@ def _documentary_summary(
     else:
         pgdas_status = "PARCIAL_O_PENDENTE"
 
+    acquisition_totals = _mapping(acquisition_data.get("documentary_totals"))
+    gross_purchases = acquisition_totals.get("gross_documentary_purchases")
+    pending_purchases = acquisition_totals.get("pending_purchase_treatment")
+    purchase_returns = revenue_totals.get("purchase_returns_outbound")
+    if revenue is not None and purchase_returns is None:
+        purchase_returns = "0.00"
+    gross_revenue = revenue_totals.get("gross_operational_revenue")
+    sales_returns = revenue_totals.get("sales_returns_inbound")
+    net_purchases = None
+    net_revenue = None
+    if gross_purchases is not None and purchase_returns is not None:
+        net_purchases = _format_decimal(
+            _decimal(gross_purchases) - _decimal(purchase_returns)
+        )
+    if gross_revenue is not None and sales_returns is not None:
+        net_revenue = _format_decimal(_decimal(gross_revenue) - _decimal(sales_returns))
+    if acquisition is None and revenue is None:
+        comparison_status = "NOT_APURADO"
+    elif (
+        acquisition is None
+        or revenue is None
+        or gross_purchases is None
+        or pending_purchases is None
+        or gross_revenue is None
+        or _decimal(pending_purchases) != 0
+        or not revenue_gates.get("revenue_population_ready")
+    ):
+        comparison_status = "PARTIAL"
+    else:
+        comparison_status = "AVAILABLE"
+    purchase_sales_comparison = {
+        "status": comparison_status,
+        "gross_documentary_purchases": gross_purchases,
+        "purchase_returns_outbound": purchase_returns,
+        "net_documentary_purchases_candidate": net_purchases,
+        "pending_purchase_treatment": pending_purchases,
+        "gross_operational_revenue": gross_revenue,
+        "sales_returns_inbound": sales_returns,
+        "net_documentary_revenue_candidate": net_revenue,
+        "purchase_to_revenue_ratio": _ratio(net_purchases, net_revenue),
+        "cross_document_linkage": "NOT_PERFORMED",
+        "interpretation": "AUDIT_ONLY",
+    }
+
     return {
         "schema": DOCUMENTARY_SUMMARY_SCHEMA,
         "schema_version": DOCUMENTARY_SUMMARY_SCHEMA_VERSION,
@@ -183,6 +246,7 @@ def _documentary_summary(
             "records": acquisition_data.get("acquisition_records"),
             "category_counts": acquisition_data.get("category_counts", {}),
             "category_amounts": acquisition_data.get("category_amounts", {}),
+            "documentary_totals": acquisition_data.get("documentary_totals", {}),
             "nature_status": acquisition_nature_status,
         },
         "revenue": {
@@ -196,6 +260,7 @@ def _documentary_summary(
                     "other_revenue",
                     "gross_operational_revenue",
                     "sales_returns_inbound",
+                    "purchase_returns_outbound",
                     "excluded_non_revenue_operations",
                     "pending_revenue_treatment",
                     "unallocated_document_components",
@@ -227,6 +292,7 @@ def _documentary_summary(
             "revenue_cfop": revenue_classification_status,
             "pgdas": pgdas_status,
         },
+        "purchase_sales_comparison": purchase_sales_comparison,
         "limitations": [
             "Resumo preliminar de evidência local; não é conclusão de receita tributável, crédito ou débito.",
             "Valores ausentes significam fonte ainda não disponível, não ausência de movimento.",
@@ -765,8 +831,10 @@ def _append_documentary_summary(lines: list[str], result: dict[str, Any]) -> Non
     flows = _mapping(documentary.get("flows"))
     content = _mapping(documentary.get("content"))
     acquisitions = _mapping(documentary.get("acquisitions"))
+    acquisition_totals = _mapping(acquisitions.get("documentary_totals"))
     revenue = _mapping(documentary.get("revenue"))
     revenue_totals = _mapping(revenue.get("totals"))
+    comparison = _mapping(documentary.get("purchase_sales_comparison"))
     pgdas = _mapping(documentary.get("pgdas_reconciliation"))
     pgdas_totals = _mapping(pgdas.get("totals"))
 
@@ -875,6 +943,14 @@ def _append_documentary_summary(lines: list[str], result: dict[str, Any]) -> Non
     lines.append(
         f"- Natureza econômica: {_summary_status_label(acquisitions.get('nature_status'))}."
     )
+    if acquisition_totals:
+        lines.extend(
+            [
+                f"- Total bruto documental de compras: {_summary_value(acquisition_totals.get('gross_documentary_purchases'))}.",
+                f"- Documentos pendentes de tratamento: {_summary_value(acquisition_totals.get('pending_document_count'))}.",
+                f"- Operações de entrada fora de compras: {_summary_value(acquisition_totals.get('non_purchase_entry_operations'))}.",
+            ]
+        )
 
     lines.extend(
         [
@@ -892,6 +968,7 @@ def _append_documentary_summary(lines: list[str], result: dict[str, Any]) -> Non
         "other_revenue": "Outras receitas",
         "gross_operational_revenue": "Receita operacional documental",
         "sales_returns_inbound": "Devoluções",
+        "purchase_returns_outbound": "Devoluções de compra emitidas",
         "excluded_non_revenue_operations": "Remessas e operações fora da receita",
         "pending_revenue_treatment": "Tratamento pendente",
         "unallocated_document_components": "Componentes não alocados",
@@ -905,6 +982,25 @@ def _append_documentary_summary(lines: list[str], result: dict[str, Any]) -> Non
     lines.append(
         f"- Classificação por CFOP: {_summary_status_label(revenue.get('classification_status'))}."
     )
+
+    if comparison.get("status") not in {None, "NOT_APURADO"}:
+        lines.extend(
+            [
+                "",
+                "### Compras documentais × vendas documentais",
+                "",
+                "| Indicador | Valor |",
+                "|---|---:|",
+                f"| Compras documentais brutas | {_summary_value(comparison.get('gross_documentary_purchases'))} |",
+                f"| Devoluções de compra | {_summary_value(comparison.get('purchase_returns_outbound'))} |",
+                f"| Compras documentais líquidas candidatas | {_summary_value(comparison.get('net_documentary_purchases_candidate'))} |",
+                f"| Receita operacional documental bruta | {_summary_value(comparison.get('gross_operational_revenue'))} |",
+                f"| Devoluções de venda | {_summary_value(comparison.get('sales_returns_inbound'))} |",
+                f"| Receita documental líquida candidata | {_summary_value(comparison.get('net_documentary_revenue_candidate'))} |",
+                f"| Relação compras/receita | {_summary_value(comparison.get('purchase_to_revenue_ratio'))} |",
+                f"- Situação: {_summary_status_label(comparison.get('status'))}. Indicador exclusivamente documental e de auditoria; não conclui margem, estoque ou irregularidade.",
+            ]
+        )
 
     if any(value is not None for value in pgdas_totals.values()) or pgdas.get(
         "status"

@@ -14,9 +14,10 @@ from typing import Any
 
 from .content import CONTENT_SCHEMA_VERSION
 from .core import ValidationError, _format_decimal, _parse_decimal
+from .operation_classification import classify_product_item as _classify_product_item
 
 REVENUE_SCHEMA = "br.com.planejamento-reforma-tributaria/revenue-review"
-REVENUE_SCHEMA_VERSION = "1.2.0"
+REVENUE_SCHEMA_VERSION = "1.3.0"
 DECISION_FILE = Path("00_CONTROLE") / "classificacao-receitas.csv"
 PENDING_CLASSES = {
     "INVALID_CFOP_PENDING",
@@ -166,49 +167,6 @@ def _period_bounds(period: str) -> tuple[date, date]:
     return date(year, month, 1), date(year, month, calendar.monthrange(year, month)[1])
 
 
-def _cfop_current(record: dict[str, Any], start: date, end: date) -> bool:
-    effective_from = date.fromisoformat(record["effective_from"])
-    effective_to_raw = record.get("effective_to")
-    effective_to = date.fromisoformat(effective_to_raw) if effective_to_raw else None
-    return effective_from <= end and (effective_to is None or effective_to >= start)
-
-
-def _classify_product_item(
-    record: dict[str, Any],
-    cfop_index: dict[str, dict[str, Any]],
-    sale_cfops: set[str],
-    inbound_return_cfops: set[str],
-    period_start: date,
-    period_end: date,
-) -> tuple[str, dict[str, Any] | None]:
-    cfop = str(record.get("cfop") or "").strip()
-    official = cfop_index.get(cfop)
-    if (
-        official is None
-        or official.get("ind_nfe") != 1
-        or not _cfop_current(official, period_start, period_end)
-    ):
-        return "INVALID_CFOP_PENDING", official
-    direction = record.get("direction")
-    if official["ind_devolution"] == 1:
-        if direction == "ENTRADA" and cfop in inbound_return_cfops:
-            return "SALES_RETURN_INBOUND", official
-        if direction == "SAIDA":
-            return "PURCHASE_RETURN_OUTBOUND", official
-        return "RETURN_INBOUND_PENDING_ORIGIN", official
-    if official["ind_annulment"] == 1:
-        return "NON_REVENUE_ANNULMENT", official
-    if official["ind_return"] == 1:
-        return "NON_REVENUE_RETURN", official
-    if official["ind_remittance"] == 1:
-        return "NON_REVENUE_REMITTANCE", official
-    if direction == "SAIDA" and cfop in sale_cfops:
-        return "REVENUE_GOODS", official
-    if direction == "SAIDA":
-        return "PENDING_REVENUE_TREATMENT", official
-    return "PURCHASE_CONTEXT", official
-
-
 def _decimal(value: Any) -> Decimal:
     return _parse_decimal(value) or Decimal(0)
 
@@ -339,7 +297,7 @@ def review_revenue_folder(
     validation_records = {
         record["document_ref"]: record
         for record in validation.get("documents", {}).get("records", [])
-        if record.get("authorized_for_planning")
+        if record.get("included") and record.get("authorized_for_planning")
     }
     products_by_document: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for record in content_records:
@@ -486,6 +444,7 @@ def review_revenue_folder(
         revenue_goods + revenue_services + revenue_transport + other_revenue
     )
     sales_returns = total_for("SALES_RETURN_INBOUND")
+    purchase_returns = total_for("PURCHASE_RETURN_OUTBOUND")
     net_candidate = gross_operational - sales_returns
     excluded_operations = total_for(
         "PURCHASE_RETURN_OUTBOUND",
@@ -571,6 +530,7 @@ def review_revenue_folder(
             "other_revenue": _money(other_revenue),
             "gross_operational_revenue": _money(gross_operational),
             "sales_returns_inbound": _money(sales_returns),
+            "purchase_returns_outbound": _money(purchase_returns),
             "net_documentary_revenue_candidate": _money(net_candidate),
             "excluded_non_revenue_operations": _money(excluded_operations),
             "pending_revenue_treatment": _money(pending_amount),
@@ -623,6 +583,7 @@ def _report(result: dict[str, Any]) -> str:
         f"- Receita operacional documental: {totals['gross_operational_revenue']}",
         f"- Devoluções de venda recebidas: {totals['sales_returns_inbound']}",
         f"- Receita documental líquida candidata: {totals['net_documentary_revenue_candidate']}",
+        f"- Devoluções de compra emitidas: {totals['purchase_returns_outbound']}",
         f"- Operações fora da receita: {totals['excluded_non_revenue_operations']}",
         f"- Tratamento pendente: {totals['pending_revenue_treatment']}",
         f"- Resíduo documental não comprovado: {totals['unallocated_document_components']}",

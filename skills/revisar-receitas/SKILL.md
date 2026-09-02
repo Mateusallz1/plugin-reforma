@@ -25,6 +25,7 @@ Execute esta fase do UC-003 somente quando o UC-002 indicar `uc003_analysis_auth
 
 - Use o total do documento do UC-001 como valor: `vNF`, valor do serviço ou valor da prestação.
 - Use os itens do UC-002 para explicar e classificar CFOP; nunca some `vProd` como substituto silencioso do total da nota.
+- A classificação CFOP de entradas e saídas é compartilhada com o UC-003A; isso evita que devoluções de venda ou remessas de entrada sejam contadas como compras.
 - Determine primeiro a direção. CFOP de venda em uma nota de entrada representa venda do fornecedor, não receita da empresa analisada.
 - Use `indDevol`, `indRetor`, `indAnula` e `indRemes` do snapshot oficial. O checklist de CFOPs usuais de venda é regra do analista e não lista exaustiva.
 - Documento com classes distintas fica `MIXED_DOCUMENT_PENDING_ALLOCATION`.

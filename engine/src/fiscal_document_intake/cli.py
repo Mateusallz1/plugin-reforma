@@ -41,6 +41,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     acquisition.add_argument("folder", type=Path)
     acquisition.add_argument("--ruleset", type=Path, required=True)
+    acquisition.add_argument("--cfop-ruleset", type=Path)
+    acquisition.add_argument("--analyst-rules", type=Path)
     acquisition.add_argument("--output-dir", type=Path)
     revenue = subparsers.add_parser(
         "review-revenue", help="Revisar receitas, devoluções e remessas do UC-002"
@@ -71,6 +73,8 @@ def build_parser() -> argparse.ArgumentParser:
     portfolio.add_argument("--page", type=int, default=1)
     portfolio.add_argument("--page-size", type=int, default=10)
     portfolio.add_argument("--ruleset", type=Path)
+    portfolio.add_argument("--cfop-ruleset", type=Path)
+    portfolio.add_argument("--analyst-rules", type=Path)
     approval = subparsers.add_parser(
         "approve-portfolio-group",
         help="Aprovar um grupo pendente com alcance explícito",
@@ -86,6 +90,8 @@ def build_parser() -> argparse.ArgumentParser:
     approval.add_argument("--company-ref")
     approval.add_argument("--occurrence-ref")
     approval.add_argument("--ruleset", type=Path)
+    approval.add_argument("--cfop-ruleset", type=Path)
+    approval.add_argument("--analyst-rules", type=Path)
     approval.add_argument("--request-id")
     export = subparsers.add_parser(
         "export-portfolio-review",
@@ -138,7 +144,12 @@ def main(argv: list[str] | None = None) -> int:
                 "outputs": [path.name for path in written],
             }
         elif args.command == "review-acquisitions":
-            result = review_acquisitions_folder(args.folder, args.ruleset)
+            result = review_acquisitions_folder(
+                args.folder,
+                args.ruleset,
+                cfop_ruleset_path=args.cfop_ruleset,
+                analyst_rules_path=args.analyst_rules,
+            )
             output_dir = args.output_dir or args.folder / "05_REVISAO_AQUISICOES"
             written = write_acquisition_outputs(result, output_dir)
             ready = result["gates"]["uc003_execution_ready"]
@@ -210,6 +221,8 @@ def main(argv: list[str] | None = None) -> int:
                 page=args.page,
                 page_size=args.page_size,
                 ruleset_path=args.ruleset,
+                cfop_ruleset_path=args.cfop_ruleset,
+                analyst_rules_path=args.analyst_rules,
             )
             ready = True
         elif args.command == "approve-portfolio-group":
@@ -223,6 +236,8 @@ def main(argv: list[str] | None = None) -> int:
                 company_ref=args.company_ref,
                 occurrence_ref=args.occurrence_ref,
                 ruleset_path=args.ruleset,
+                cfop_ruleset_path=args.cfop_ruleset,
+                analyst_rules_path=args.analyst_rules,
                 request_id=args.request_id,
             )
             ready = not response["reprocess_errors"]

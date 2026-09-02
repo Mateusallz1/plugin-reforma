@@ -91,6 +91,8 @@ def test_uc002_extracts_deterministically_and_preserves_privacy(
     }
     assert first["component_count"] == 1
     assert first["document_reconciliation"]["status_counts"] == {"MATCHED": 1}
+    assert first["ncm_snapshot"]["status"] == "LOADED"
+    assert first["ncm_description_status_counts"] == {"INCONCLUSIVE": 1}
     observation_codes = {finding["code"] for finding in first["observations"]}
     assert observation_codes == {
         "CCLASSTRIB_MISSING",
@@ -99,12 +101,14 @@ def test_uc002_extracts_deterministically_and_preserves_privacy(
     }
     assert first["restrictions"] == []
 
-    summary_path, records_path, report_path = write_content_outputs(
-        first, folder / "04_CONTEUDO"
+    summary_path, records_path, report_path, queue_path, ncm_review_path = (
+        write_content_outputs(first, folder / "04_CONTEUDO")
     )
     summary = summary_path.read_text(encoding="utf-8")
     records = records_path.read_text(encoding="utf-8")
     report = report_path.read_text(encoding="utf-8")
+    assert queue_path.is_file()
+    assert ncm_review_path.is_file()
     public_output = summary + report
     assert "ITEM SINTETICO" not in public_output
     assert "SERVICO SINTETICO" not in public_output
@@ -202,7 +206,7 @@ def test_uc002_observes_product_total_mismatch_without_blocking(tmp_path: Path) 
 
 def test_uc002_validates_product_ncm_from_approved_catalog(tmp_path: Path) -> None:
     folder, _, _ = make_authorized_content_case(tmp_path)
-    write_product_ncm_catalog(folder, "00000000")
+    write_product_ncm_catalog(folder, "01012100")
 
     result = extract_content_folder(folder)
     product = next(
@@ -254,7 +258,7 @@ def test_uc002_restricts_invalid_ncm_without_blocking_extraction(
     folder = make_folder(tmp_path, "invalid-ncm", document_families=["NFE"])
     key = access_key(COMPANY, "55", 74)
     xml = nfe_xml(key, "55", COMPANY, OTHER, "2026-03-05", "100.00")
-    xml = xml.replace("<NCM>00000000</NCM>", "<NCM>INVALIDO</NCM>")
+    xml = xml.replace("<NCM>01012100</NCM>", "<NCM>INVALIDO</NCM>")
     (folder / "01_XML" / "invalid-ncm.xml").write_text(xml, encoding="utf-8")
     validation = validate_folder(folder)
     assert validation["gates"]["planning_authorized"] is True
@@ -267,6 +271,28 @@ def test_uc002_restricts_invalid_ncm_without_blocking_extraction(
     assert result["uc003_eligibility"]["restricted_records"] == 1
     assert {finding["code"] for finding in result["restrictions"]} == {"NCM_INVALID"}
     assert main(["extract-content", str(folder)]) == 0
+
+
+def test_uc002_restricts_ncm_not_effective_in_current_snapshot(
+    tmp_path: Path,
+) -> None:
+    folder = make_folder(tmp_path, "ncm-not-effective", document_families=["NFE"])
+    key = access_key(COMPANY, "55", 75)
+    xml = nfe_xml(key, "55", COMPANY, OTHER, "2026-03-05", "100.00")
+    xml = xml.replace("<NCM>01012100</NCM>", "<NCM>99999999</NCM>")
+    (folder / "01_XML" / "ncm-not-effective.xml").write_text(xml, encoding="utf-8")
+    validation = validate_folder(folder)
+    write_outputs(validation, folder / "03_SAIDAS")
+
+    result = extract_content_folder(folder)
+    product = result["_private_records"][0]
+
+    assert product["ncm_description_review"]["status"] == "UNVERIFIABLE"
+    assert product["ncm_description_review"]["reason_codes"] == ["NCM_NOT_EFFECTIVE"]
+    assert product["eligible_for_uc003"] is False
+    assert {finding["code"] for finding in result["restrictions"]} == {
+        "NCM_NOT_EFFECTIVE"
+    }
 
 
 @pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="Windows launcher")

@@ -14,7 +14,7 @@ Execute o UC-002 somente depois que o UC-001 tiver produzido `03_SAIDAS/validati
 3. Para código `0`, informe cobertura, observações, restrições e os gates `content_extraction_ready`, `uc003_analysis_authorized` e `uc003_full_population_ready`.
 4. Para código `2`, informe por que a extração não pode alimentar a etapa seguinte.
 
-`normalized-items.local.jsonl` contém descrições comerciais e é restrito à pasta local do cliente. Use-o como entrada determinística das próximas etapas, mas não reproduza seu conteúdo na conversa.
+`normalized-items.local.jsonl` e `ncm-description-review.local.jsonl` contêm descrições comerciais e são restritos à pasta local do cliente. Use-os como entrada determinística das próximas etapas, mas não reproduza seu conteúdo na conversa. A fila CSV de NCM é apenas uma fila de triagem, não reclassifica o produto.
 
 ## Regras
 
@@ -23,7 +23,7 @@ Execute o UC-002 somente depois que o UC-001 tiver produzido `03_SAIDAS/validati
 - Mantenha campos ausentes como `null`; nunca converta ausência em zero, isenção ou não incidência.
 - Separe CST/CSOSN por tributo e caminho XML. Uma tag genérica `CST` não é evidência suficiente.
 - Trate NCM, CFOP, CNAE, NBS e `cClassTrib` como evidências distintas.
-- Observações de qualidade não impedem o UC-003. Restrinja somente o item de produto com NCM ausente/malformado ou divergente de uma entrada `APROVADO` no catálogo do analista.
+- Observações de qualidade não impedem o UC-003. Restrinja somente o item de produto com NCM ausente/malformado, inexistente ou fora de vigência no snapshot, ou divergente de uma entrada `APROVADO` no catálogo do analista.
 - Quando existir, leia `00_CONTROLE/catalogo-produtos-ncm.csv`. Sem catálogo ou sem correspondência por `codigo_produto`, registre inconclusão e permita avanço provisório; não compare descrição por palavras para criar bloqueio.
 - Preserve serviços, transportes e produtos elegíveis quando outro item estiver restrito.
 - O UC-002 valida presença, formato e coerência do conteúdo. Classificação jurídica pertence ao UC-003 e exige regras versionadas e revisão do analista.

@@ -42,7 +42,7 @@ from .simple_reconciliation import (
     write_simple_reconciliation_outputs,
 )
 
-BATCH_SCHEMA_VERSION = "1.2.0"
+BATCH_SCHEMA_VERSION = "1.3.0"
 STATE_FOLDER = ".reforma-tributaria"
 MANIFEST_FILE = "processamento-lote-manifest.json"
 CONFIG_FILE = "configuracao-lote.local.json"
@@ -359,7 +359,12 @@ def _process_period(
         if not content["gates"]["uc003_analysis_authorized"]:
             raise ValidationError("A extração não autorizou as revisões operacionais")
 
-        acquisition = review_acquisitions_folder(folder, acquisition_ruleset)
+        acquisition = review_acquisitions_folder(
+            folder,
+            acquisition_ruleset,
+            cfop_ruleset_path=cfop_ruleset,
+            analyst_rules_path=analyst_rules,
+        )
         write_acquisition_outputs(acquisition, folder / "05_REVISAO_AQUISICOES")
         revenue = review_revenue_folder(folder, cfop_ruleset, analyst_rules)
         write_revenue_outputs(revenue, folder / "06_REVISAO_RECEITAS")
@@ -581,7 +586,12 @@ def process_portfolio_periods(
         },
     )
 
-    portfolio = review_portfolio(root, ruleset_path=rules["acquisition"])
+    portfolio = review_portfolio(
+        root,
+        ruleset_path=rules["acquisition"],
+        cfop_ruleset_path=rules["cfop"],
+        analyst_rules_path=rules["analyst"],
+    )
     results.sort(key=lambda item: (item["establishment_ref"], item["period"]))
     processed = sum(item["status"] == "PROCESSED" for item in results)
     skipped = sum(item["status"] == "SKIPPED_UNCHANGED" for item in results)
