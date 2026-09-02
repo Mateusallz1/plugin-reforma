@@ -29,6 +29,7 @@ um único estabelecimento continua no fluxo individual acima.
 - Use a declaração oficial PGDAS-D como autoridade dos valores declarados. Recibo e extrato confirmam a transmissão; DAS gerado não comprova pagamento; relatórios do sistema contábil são auxiliares.
 - Concilie primeiro por estabelecimento e atividade. Não compare o total consolidado de matriz e filiais com uma base documental de apenas um estabelecimento.
 - A convenção de pastas matriz/filiais é a entrada do consolidador: a confirmação final usa os CNPJs pseudonimizados dos XMLs e os estabelecimentos da declaração, não o nome da pasta isoladamente.
+- Quando cada estabelecimento tiver uma referência empresarial própria, o lote usa a identidade de grupo validada na configuração local e o CNPJ-base comum; isso não mistura os estabelecimentos nem elimina a conferência individual.
 - O consolidador grava a saída de grupo em `.reforma-tributaria/conciliacoes-simples-grupo/<competência>/` e só marca cobertura integral quando os conjuntos documental e declarado coincidem.
 - `PARTIAL_GROUP_COVERAGE` exige documentos dos estabelecimentos ausentes, mas não transforma a receita descoberta em não emissão.
 - Ausência de documento nunca é ausência de movimento. `NO_MOVEMENT` só pode ser afirmado quando documentação e declaração são zero; declaração positiva sem documento é `DECLARED_WITHOUT_DOCUMENT_SUPPORT`.

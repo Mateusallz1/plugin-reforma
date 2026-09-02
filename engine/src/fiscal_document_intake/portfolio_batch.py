@@ -297,6 +297,38 @@ def _known_identity(items: list[dict[str, Any]]) -> dict[str, Any] | None:
     return None
 
 
+def _group_entity_ref(root: Path, items: list[dict[str, Any]]) -> str | None:
+    """Resolve a group identity from the local portfolio configuration."""
+
+    configured = _load_json(root / STATE_FOLDER / CONFIG_FILE).get("establishments", {})
+    if not isinstance(configured, dict):
+        configured = {}
+    taxpayer_bases: set[str] = set()
+    for item in items:
+        identity = configured.get(item["establishment_key"])
+        if not isinstance(identity, dict):
+            try:
+                identity = _load_json(item["folder"] / "00_CONTROLE" / "escopo.json")
+            except ValidationError:
+                return None
+        taxpayers = identity.get("entity_taxpayer_ids")
+        if not isinstance(taxpayers, list) or not taxpayers:
+            return None
+        normalized = {
+            "".join(character for character in str(value) if character.isdigit())
+            for value in taxpayers
+        }
+        if any(len(value) < 8 for value in normalized):
+            return None
+        taxpayer_bases.update(value[:8] for value in normalized)
+    if len(taxpayer_bases) != 1:
+        return None
+    digest = (
+        hashlib.sha256(next(iter(taxpayer_bases)).encode()).hexdigest()[:10].upper()
+    )
+    return f"GRUPO-{digest}"
+
+
 def _bootstrap_identity(
     items: list[dict[str, Any]],
 ) -> tuple[dict[str, Any] | None, dict[str, dict[str, Any]]]:
@@ -491,8 +523,11 @@ def _run_group_reconciliations(
             }
             continue
         try:
+            group_entity_ref = _group_entity_ref(root, items)
             reconciliation = reconcile_simple_revenue_group(
-                [item["folder"] for item in items], next(iter(pgdas_folders))
+                [item["folder"] for item in items],
+                next(iter(pgdas_folders)),
+                group_entity_ref=group_entity_ref,
             )
             output_dir = root / STATE_FOLDER / "conciliacoes-simples-grupo" / period
             write_simple_reconciliation_outputs(reconciliation, output_dir)

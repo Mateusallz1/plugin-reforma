@@ -7,7 +7,7 @@ Cada linha preserva:
 
 - `name_cnpj`: apresentação obrigatória no formato `NOME EMPRESA + CNPJ`;
 - `simples_status`: situação documental derivada do CRT dos documentos ou do
-  snapshot autorizado;
+  snapshot autorizado. CRT ausente ou inválido fica como `REGIME_INDETERMINADO`;
 - `document_total`: total dos documentos do fornecedor;
 - `product_total` e `share_of_portfolio_products`: valor dos produtos elegíveis e
   participação no total da competência;

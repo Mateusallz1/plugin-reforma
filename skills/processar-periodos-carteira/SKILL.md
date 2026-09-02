@@ -48,6 +48,10 @@ o PGDAS-D estiver disponível, o lote executa também a conciliação consolidad
 grupo. Para resolver clientes CNPJ pela base local do Simples em todo o lote,
 informe opcionalmente `-SimplesRegistry <arquivo JSONL>`.
 
+O vínculo de grupo usa a configuração local de estabelecimentos e o CNPJ-base
+comum. Assim, referências internas diferentes para matriz e filial não impedem a
+consolidação quando a própria carteira comprova que pertencem à mesma empresa.
+
 ## Resposta
 
 Informe somente:

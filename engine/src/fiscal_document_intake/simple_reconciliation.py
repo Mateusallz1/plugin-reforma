@@ -527,7 +527,10 @@ def reconcile_simple_revenue(
 
 
 def reconcile_simple_revenue_group(
-    folders: list[Path | str], pgdas_folder: Path | str
+    folders: list[Path | str],
+    pgdas_folder: Path | str,
+    *,
+    group_entity_ref: str | None = None,
 ) -> dict[str, Any]:
     """Reconcile all explicitly discovered establishments in one PGDAS-D group."""
 
@@ -563,8 +566,9 @@ def reconcile_simple_revenue_group(
     establishment_refs = [
         summary.get("scope", {}).get("establishment_ref") for summary in summaries
     ]
-    if None in entity_refs or len(entity_refs) != 1:
+    if None in entity_refs or (len(entity_refs) != 1 and not group_entity_ref):
         raise ValidationError("As pastas do grupo não comprovam a mesma empresa")
+    effective_entity_ref = group_entity_ref or next(iter(entity_refs))
     if None in periods or len(periods) != 1:
         raise ValidationError("As pastas do grupo devem ter a mesma competência")
     if any(not reference for reference in establishment_refs) or len(
@@ -663,6 +667,7 @@ def reconcile_simple_revenue_group(
         ),
         "declaration_hash": _sha256(declaration_path),
         "period": period,
+        "group_entity_ref": effective_entity_ref,
         "schema_version": SIMPLE_RECONCILIATION_SCHEMA_VERSION,
     }
     reconciliation_id = (
@@ -707,7 +712,7 @@ def reconcile_simple_revenue_group(
         "status": status,
         "scope": {
             "mode": "GROUP",
-            "entity_ref": next(iter(entity_refs)),
+            "entity_ref": effective_entity_ref,
             "documentary_establishment_ref": "GROUP",
             "period": period,
             "revenue_regime": declaration["revenue_regime"],

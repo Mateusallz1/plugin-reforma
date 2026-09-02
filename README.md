@@ -4,6 +4,9 @@ Plugin local para validação documental e planejamento fiscal rastreável. A va
 
 ## Retomar em outra máquina
 
+O passo a passo detalhado e o diagnóstico da carteira de referência estão em
+[docs/GUIA-RETOMADA-EM-CASA.md](docs/GUIA-RETOMADA-EM-CASA.md).
+
 1. Instale Git, Codex Desktop, Python 3.12 ou superior e `uv`.
 2. Clone este repositório para a pasta padrão de plugins do usuário:
 
@@ -32,6 +35,7 @@ A conversa anterior e a memória da outra máquina não são necessárias: o con
 - `skills/revisar-carteira-aquisicoes/`: consolida pendências repetidas, registra o alcance aprovado e reaplica decisões compatíveis.
 - `skills/revisar-receitas/`: segunda frente do UC-003; separa vendas, devoluções, remessas e operações pendentes.
 - `skills/revisar-contrapartes/`: apura fornecedores, clientes CNPJ e vendas para CPF com identificadores locais controlados.
+- `skills/simular-credito-ibs-cbs/`: UC-004; simula exposição comercial e crédito estimado por fornecedor sobre o período PGDAS-D conciliado.
 - `skills/conciliar-faturamento-simples/`: UC-003C; concilia o UC-003B com o PGDAS-D por estabelecimento e atividade.
 - `engine/`: motor Python determinístico compartilhado e gerenciado por `uv`.
 - `scripts/invoke-engine.ps1`: bootstrap único do ambiente e do executável usado pelos launchers das skills. Por padrão, o ambiente versionado fica no `LocalApplicationData` do usuário; `FISCAL_INTAKE_ENVIRONMENT` permite apontar outro local controlado.
@@ -125,6 +129,11 @@ confirma a mesma empresa pelos identificadores documentais e compara o grupo
 com a declaração. Com um único estabelecimento, o fluxo individual permanece
 inalterado.
 
+No lote, a configuração local também pode confirmar o grupo pelo CNPJ-base
+comum. As referências pseudonimizadas de cada estabelecimento continuam
+separadas; somente a chave de grupo é compartilhada para a conciliação e a
+simulação consolidada.
+
 As saídas ficam em `07_CONCILIACAO_SIMPLES/`. Cobertura parcial gera fila para o analista sem presumir não emissão. Recibo e extrato são evidências complementares, DAS não comprova pagamento e memória do sistema contábil não substitui a declaração oficial. O estágio não conclui IBS/CBS e mantém `uc004_planning_authorized=false`.
 
 Se o PGDAS-D indicar regime de apuração `CAIXA`, o resultado apresenta um aviso
@@ -140,11 +149,26 @@ são apenas contadas por documento único; nenhum CPF é persistido.
 
 O mesmo UC-003D grava `fornecedores-produtos.local.jsonl`, com uma linha por
 fornecedor e competência. Cada linha usa a convenção `NOME EMPRESA + CNPJ`,
-separa `OPTANTE_SIMPLES` de `NAO_OPTANTE_SIMPLES` e detalha os produtos
+separa `OPTANTE_SIMPLES`, `MEI`, `NAO_OPTANTE_SIMPLES` e `REGIME_INDETERMINADO` e detalha os produtos
 adquiridos por código/NCM/descrição, quantidade, valor e participação no total.
 Esse arquivo é local e identificado; o resumo público expõe apenas totais por
 regime. Com `-MeetingReport`, o analista pode solicitar também o relatório local
 `09_APRESENTACAO_CLIENTE/fornecedores-produtos.local.md`.
+
+## Simulação de crédito e exposição comercial
+
+O UC-004 executa somente depois das revisões operacionais e da conciliação do
+PGDAS-D. Usa a receita PGDAS-D do período selecionado, calcula a linha de corte
+de 20% para clientes de regime normal e trata a diferença positiva PGDAS-D × XML
+como `RECEITA_SEM_NOTA_FISCAL`: ela é tributada no Simples da mesma forma que a
+receita declarada e não recebe benefício fiscal. A alocação comercial como PF é
+apenas uma premissa do cenário.
+
+As compras são separadas em base creditável, pendente e excluída. O cenário
+inicial adota 9% para fornecedor normal confirmado, 1% para Simples e 0% para
+MEI, nanoempreendedor, PF e regime indeterminado. Todas essas taxas são
+`SIMULATION_ONLY`, não direito legal a crédito. O modelo híbrido significa IBS e
+CBS no regime regular, mantendo os demais tributos no PGDAS-D.
 
 Quando executado diretamente, o UC-003D usa `00_CONTROLE/escopo.json` para
 identificar os CNPJs próprios. No processamento de carteira, usa a identidade

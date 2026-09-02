@@ -172,7 +172,9 @@ Extrair a classificação CFOP comum para
 aquisições e receitas. O launcher de aquisições deve receber e travar o snapshot
 CFOP e o ruleset do analista, além do snapshot CST/cClassTrib já existente.
 
-Não criar `credit_eligible_amount` nesta entrega.
+Não criar `credit_eligible_amount` nesta entrega do UC-003. A simulação separada
+do UC-004 usa `creditable_base` e `estimated_credit` somente com a marca
+`SIMULATION_ONLY`.
 
 ## Contrato entregue — devoluções e comparação
 
@@ -347,6 +349,7 @@ Ao implementar os contratos:
 - `DOCUMENTARY_SUMMARY_SCHEMA_VERSION`: `1.1.0`;
 - `PLANNING_STATUS_SCHEMA_VERSION`: `1.9.0`;
 - `BATCH_SCHEMA_VERSION`: `1.11.0`.
+- `CREDIT_PLANNING_SCHEMA_VERSION`: `1.0.0`.
 
 Atualizar `_outputs_coherent`, os checks do coordenador e os IDs materiais. Os
 loaders também conferem cada hash com o digest confiável embarcado; uma alteração
@@ -363,6 +366,7 @@ Motor:
 - `engine/src/fiscal_document_intake/revenue.py`;
 - `engine/src/fiscal_document_intake/planning_status.py`;
 - `engine/src/fiscal_document_intake/portfolio_batch.py`;
+- `engine/src/fiscal_document_intake/credit_planning.py`;
 - `engine/src/fiscal_document_intake/cli.py` e launchers, se os novos locks
   exigirem argumentos adicionais.
 

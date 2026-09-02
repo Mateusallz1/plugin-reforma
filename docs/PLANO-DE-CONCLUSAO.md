@@ -13,7 +13,7 @@
 - Homologação real: 130 documentos incluídos, três escopos `READY`, sem bloqueadores.
 - UC-002: extração normalizada de produtos, serviços e transportes somente nos grupos operacionais autorizados.
 - Homologação real do UC-002: 130 documentos selecionados, 204 registros, 25 componentes, 44 NF-e reconciliadas e nenhum bloqueador de extração.
-- Testes: 97 aprovados, incluindo ausência de movimento, migração de schemas, composição completa do `vNF`, compras documentais, devoluções, comparação compras × vendas, triagem NCM, diagnóstico de nomenclatura, integridade dos rulesets, regime CAIXA, `natOp`, consolidação matriz/filiais, contrapartes, mix de produtos por fornecedor e privacidade de CPF, divergência de CRT por competência, regressões de hash de conteúdo, coerência das saídas, fechamento SQLite e retomada de aprovações preparadas; Ruff, formatação, empacotamento do snapshot e lock do `uv` aprovados.
+- Testes: 104 aprovados, incluindo ausência de movimento, migração de schemas, composição completa do `vNF`, compras documentais, devoluções, comparação compras × vendas, triagem NCM, diagnóstico de nomenclatura, integridade dos rulesets, regime CAIXA, `natOp`, consolidação matriz/filiais, contrapartes, mix de produtos por fornecedor, classificação CRT indeterminada, simulação de crédito por período, diferença PGDAS-D × XML, tratamento técnico de `RECEITA_SEM_NOTA_FISCAL` e consulta pendente de regime de clientes, privacidade de CPF, divergência de CRT por competência, regressões de hash de conteúdo, coerência das saídas, fechamento SQLite e retomada de aprovações preparadas; Ruff, formatação, empacotamento do snapshot e lock do `uv` aprovados.
 
 ## Concluído
 
@@ -58,6 +58,7 @@
 - [x] UC-003C com saída de grupo versionada (`1.2.0`) e artefatos locais separados da conciliação individual.
 - [x] Lote da carteira com consolidação automática por competência e schema `1.11.0`.
 - [x] UC-003D com inventário local de fornecedores, clientes CNPJ e vendas para CPF sem persistir CPFs, mix de produtos por fornecedor no formato `NOME + CNPJ` e relatório de reunião identificado sob demanda.
+- [x] UC-004 com simulação de exposição comercial sobre o PGDAS-D e crédito estimado por regime de fornecedor, sem conclusão legal.
 - [x] Coordenador `planejar-reforma-tributaria` com retomada por estado, execução automática segura e solicitações em linguagem comum.
 - [x] Fila conversacional da carteira com agrupamento, SQLite local, alcance explícito, reaplicação e exportação opcional.
 - [x] Processamento incremental de várias competências, com paralelismo limitado, isolamento de falhas e retomada por manifesto local.
@@ -122,7 +123,7 @@ O piloto seleciona entradas elegíveis do UC-002, classifica o fluxo como compra
 
 Na homologação real, 204 registros originaram 70 aquisições: 63 mercadorias, 1 serviço tomado e 6 transportes tomados. O snapshot confirmou 29 pares CST/cClassTrib e manteve 41 registros com evidência pendente; todas as 70 naturezas aguardam aprovação do analista.
 
-Ainda falta homologar a fila real e implementar as regras materiais que avaliarão hipóteses de crédito. Até lá, `uc004_planning_authorized=false`.
+Ainda falta homologar a fila real e implementar as regras materiais que convertam evidências em crédito legal. O UC-004 disponível nesta fase produz somente simulações internas e mantém `credit_legal_conclusion=false`.
 
 O total documental de compras agora usa o total declarado do documento único,
 sem somar itens nem excluir operações por ausência de crédito. Devoluções de
@@ -133,7 +134,7 @@ separados; somente o analista pode resolver uma natureza pendente.
 
 O piloto combina total documental do UC-001 com CFOPs dos itens do UC-002. A composição de `vNF` usa os totais declarados do documento e confere `vProd`/`indTot` dos itens. Notas mistas ou resíduos não explicados ficam pendentes, sem rateio automático.
 
-Na base real, 29 NF-e de venda somaram R$ 51.345,00 e 79 NFS-e prestadas somaram R$ 66.160,00. A receita operacional documental candidata foi R$ 117.505,00, sem devoluções, remessas, pendências ou componentes não alocados. A população de receita ficou pronta, mas o UC-004 permanece não autorizado.
+Na base real, 29 NF-e de venda somaram R$ 51.345,00 e 79 NFS-e prestadas somaram R$ 66.160,00. A receita operacional documental candidata foi R$ 117.505,00, sem devoluções, remessas, pendências ou componentes não alocados. A população de receita alimenta o UC-004, que permanece uma simulação e não autoriza crédito legal.
 
 O resumo de planejamento também calcula, quando ambas as frentes estão prontas,
 o candidato líquido documental de compras, o candidato líquido documental de
@@ -198,8 +199,8 @@ O [PLANO-IMPLEMENTACAO-COMPRAS-NCM.md](PLANO-IMPLEMENTACAO-COMPRAS-NCM.md) foi i
 - [x] fila local e confirmação do analista sem presunção de benefício IBS/CBS;
 - [x] migração dos schemas e do lote incremental.
 
-O incremento não implementa crédito, benefício, margem, estoque, omissão ou
-reclassificação automática.
+O incremento não implementa crédito legal, benefício, margem, estoque, omissão ou
+reclassificação automática. O UC-004 apenas calcula cenários internos de previsão.
 
 ## Critérios de encerramento desta etapa
 

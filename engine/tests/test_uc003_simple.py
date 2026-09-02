@@ -42,6 +42,7 @@ def write_revenue_summary(
     services: str = "200.00",
     status: str = "REVENUE_REVIEW_READY",
     establishment_id: str = MATRIX,
+    entity_ref: str = "EMPRESA-SYNTHETIC",
 ) -> None:
     target = folder / "06_REVISAO_RECEITAS"
     target.mkdir(parents=True)
@@ -53,7 +54,7 @@ def write_revenue_summary(
         "review_id": "REV-SYNTHETIC000001",
         "status": status,
         "scope": {
-            "entity_ref": "EMPRESA-SYNTHETIC",
+            "entity_ref": entity_ref,
             "establishment_ref": establishment_ref(establishment_id),
             "period": period,
         },
@@ -196,6 +197,28 @@ def test_uc003c_consolidates_matrix_and_branch_from_one_portfolio_root(
     assert result["gates"]["group_coverage_complete"] is True
     assert result["gates"]["documentary_scope_reconciled"] is True
     assert result["totals"]["matched_difference"] == "0.00"
+
+
+def test_uc003c_accepts_explicit_group_identity_for_distinct_establishment_refs(
+    tmp_path: Path,
+) -> None:
+    matrix_folder = tmp_path / "MATRIZ" / "01-2026"
+    branch_folder = tmp_path / "FILIAL" / "01-2026"
+    pgdas = tmp_path / "pgdas"
+    write_revenue_summary(
+        matrix_folder, establishment_id=MATRIX, entity_ref="EMPRESA-MATRIZ"
+    )
+    write_revenue_summary(
+        branch_folder, establishment_id=BRANCH, entity_ref="EMPRESA-FILIAL"
+    )
+    write_pgdas_declaration(pgdas)
+
+    result = reconcile_simple_revenue_group(
+        [matrix_folder, branch_folder], pgdas, group_entity_ref="GRUPO-SYNTHETIC"
+    )
+
+    assert result["scope"]["entity_ref"] == "GRUPO-SYNTHETIC"
+    assert result["gates"]["group_coverage_complete"] is True
 
 
 def test_uc003c_reads_month_from_period_start_date(tmp_path: Path) -> None:

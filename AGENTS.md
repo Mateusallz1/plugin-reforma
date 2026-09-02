@@ -1,12 +1,17 @@
 # Contexto operacional do plugin
 
+O handoff entre máquinas está em `docs/GUIA-RETOMADA-EM-CASA.md`; consulte-o
+antes de retomar o fluxo em casa e confirme a versão do manifesto e o estado do
+Git.
+
 ## Autoridade atual
 
-- A porta de entrada para uma empresa e uma competência é `planejar-reforma-tributaria`. Para várias competências, `processar-periodos-carteira` executa o lote incremental. Para a revisão central, `revisar-carteira-aquisicoes` consolida pendências e registra aprovações com alcance explícito. A skill `revisar-contrapartes` apura fornecedores, clientes CNPJ e vendas para CPF. As skills UC-001 a UC-003D permanecem como componentes operacionais.
+- A porta de entrada para uma empresa e uma competência é `planejar-reforma-tributaria`. Para várias competências, `processar-periodos-carteira` executa o lote incremental. Para a revisão central, `revisar-carteira-aquisicoes` consolida pendências e registra aprovações com alcance explícito. A skill `revisar-contrapartes` apura fornecedores, clientes CNPJ e vendas para CPF; `simular-credito-ibs-cbs` executa o UC-004 somente como previsão. As skills UC-001 a UC-004 permanecem como componentes operacionais.
 - A validação documental grava `validation-result.json` e `relatorio-prontidao-documental.md` na pasta do cliente.
-- As etapas gravam artefatos em `03_SAIDAS/`, `04_CONTEUDO/`, `05_REVISAO_AQUISICOES/`, `06_REVISAO_RECEITAS/`, `07_CONCILIACAO_SIMPLES/` e `08_STATUS_PLANEJAMENTO/`. Arquivos `*.local.jsonl` contêm detalhes comerciais e devem permanecer locais e restritos.
+- As etapas gravam artefatos em `03_SAIDAS/`, `04_CONTEUDO/`, `05_REVISAO_AQUISICOES/`, `06_REVISAO_RECEITAS/`, `07_CONCILIACAO_SIMPLES/`, `08_STATUS_PLANEJAMENTO/` e `10_PLANEJAMENTO_CREDITOS/`. Arquivos `*.local.jsonl` contêm detalhes comerciais e devem permanecer locais e restritos.
 - A revisão direta de contrapartes usa `00_CONTROLE/escopo.json`; no modo carteira, deve consumir a identidade validada em `.reforma-tributaria/configuracao-lote.local.json`, sem exigir cópias por competência.
 - A base identificada de produtos por fornecedor fica em `fornecedores-produtos.local.jsonl` e usa sempre `NOME EMPRESA + CNPJ`; resumos públicos agregam por regime e não podem expor identidades.
+- O UC-004 é exclusivamente uma simulação: receita-base vem do PGDAS-D conciliado, a linha comercial é 20% por período, e as taxas 9%/1% são cenários aprovados, nunca conclusão de crédito legal.
 - O motor compartilhado fica em `engine/`; `scripts/invoke-engine.ps1` é a única autoridade para preparar o ambiente `uv` e executar o CLI.
 - Somente `planejar-reforma-tributaria` pode ser invocada implicitamente; skills operacionais e `uv` exigem invocação explícita.
 - O MCP não faz parte do runtime ativo. O legado está preservado em `legacy/mcp/` apenas para consulta e migração futura.

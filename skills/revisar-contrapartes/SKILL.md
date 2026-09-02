@@ -19,12 +19,12 @@ nesse modo não é necessário duplicar o `escopo.json` em cada competência.
 1. Execute `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-counterparty-review.ps1 -Folder <pasta>`.
 2. Leia os resumos públicos em `05_REVISAO_AQUISICOES/fornecedores-regime-summary.json` e `06_REVISAO_RECEITAS/clientes-cnpj-regime-summary.json`, incluindo o bloco agregado `product_mix`.
 3. Use os JSONL locais somente para a apuração autorizada do analista; a base de produtos por fornecedor é detalhada e identificada, mas não deve ser reproduzida na conversa sem solicitação explícita.
-4. O identificador de apresentação segue sempre `NOME EMPRESA + CNPJ`; o regime do fornecedor permanece separado entre `OPTANTE_SIMPLES`, `NAO_OPTANTE_SIMPLES` e evidências divergentes.
+4. O identificador de apresentação segue sempre `NOME EMPRESA + CNPJ`; o regime do fornecedor permanece separado entre `OPTANTE_SIMPLES`, `MEI`, `NAO_OPTANTE_SIMPLES`, `REGIME_INDETERMINADO` e evidências divergentes.
 5. Acrescente `-MeetingReport` somente quando o analista solicitar um relatório local identificado para reunião com o cliente.
 
 ## Regras
 
-- Fornecedores são agrupados por CNPJ e competência. CRT `1`, `2` e `4` indicam opção documental pelo Simples; CRT `3` indica regime normal no documento. Evidências conflitantes permanecem explícitas.
+- Fornecedores são agrupados por CNPJ e competência. CRT `1` e `2` indicam opção documental pelo Simples, CRT `3` indica regime normal e CRT `4` indica MEI. CRT ausente ou inválido produz `REGIME_INDETERMINADO`; evidências conflitantes permanecem explícitas.
 - Clientes CNPJ são agrupados por CNPJ e podem usar um snapshot local de situação do Simples informado com `-SimplesRegistry`. Sem esse snapshot, o motor preserva `UNKNOWN` até a consulta autorizada.
 - Vendas para CPF são somente contadas por documento fiscal único; CPF e nome não são persistidos.
 - Consumidor sem CPF ou CNPJ fica em subtotal separado, sem agrupamento por nome.

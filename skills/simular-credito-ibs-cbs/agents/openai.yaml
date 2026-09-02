@@ -1,0 +1,6 @@
+interface:
+  display_name: "Simular crédito IBS/CBS"
+  short_description: "Projeta crédito e exposição comercial por período"
+  default_prompt: "Use $simular-credito-ibs-cbs para calcular a previsão de crédito e a exposição de clientes sobre o PGDAS-D conciliado."
+policy:
+  allow_implicit_invocation: false

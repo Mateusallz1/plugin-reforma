@@ -10,6 +10,7 @@ Execute as ações somente dentro da pasta empresarial indicada. Depois de cada 
 | `RUN_REVENUE_REVIEW` | Leia `../revisar-receitas/SKILL.md`, confira as fontes oficiais e execute seu launcher. |
 | `RUN_COUNTERPARTY_REVIEW` | Leia `../revisar-contrapartes/SKILL.md` e execute seu launcher. |
 | `RUN_SIMPLE_RECONCILIATION` | Leia `../conciliar-faturamento-simples/SKILL.md` e execute seu launcher com a pasta PGDAS-D indicada. |
+| `RUN_CREDIT_PLANNING_SIMULATION` | Leia `../simular-credito-ibs-cbs/SKILL.md` e execute a simulação somente com PGDAS-D conciliado e cenário aprovado pelo analista. |
 
 ## Tradução das entradas necessárias
 

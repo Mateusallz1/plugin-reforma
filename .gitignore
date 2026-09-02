@@ -37,6 +37,7 @@ outputs/
 **/07_CONCILIACAO_SIMPLES/
 **/08_STATUS_PLANEJAMENTO/
 **/09_APRESENTACAO_CLIENTE/
+**/10_PLANEJAMENTO_CREDITOS/
 **/.reforma-tributaria/
 **/UC001_*/
 **/*.local.jsonl

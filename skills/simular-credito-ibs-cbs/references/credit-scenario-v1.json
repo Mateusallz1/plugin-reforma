@@ -1,0 +1,20 @@
+{
+  "schema": "br.com.planejamento-reforma-tributaria/credit-simulation-scenario",
+  "schema_version": "1.0.0",
+  "scenario_id": "ANALYST_RATES_9_1_V1",
+  "mode": "SIMULATION_ONLY",
+  "effective_from": "2026-01-01",
+  "effective_to": "9999-12-31",
+  "rates": {
+    "NAO_OPTANTE_SIMPLES": "0.0900",
+    "OPTANTE_SIMPLES": "0.0100",
+    "MEI": "0.0000",
+    "NANOEMPREENDEDOR": "0.0000",
+    "PESSOA_FISICA": "0.0000",
+    "REGIME_INDETERMINADO": "0.0000",
+    "DIVERGENTE_NO_PERIODO": "0.0000",
+    "UNKNOWN": "0.0000"
+  },
+  "notes": "Premissas internas de previsão; não representam crédito legal apropriável.",
+  "approved_by": "PENDENTE_ANALISTA"
+}

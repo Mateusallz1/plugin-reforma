@@ -25,6 +25,10 @@ Depois de receitas e conciliação, a apuração de contrapartes pode ser execut
 automaticamente; seus identificadores permanecem em artefatos locais e o modo de
 reunião só é gerado mediante solicitação explícita.
 
+A simulação de crédito IBS/CBS é uma etapa posterior e explícita. Ela só deve ser
+executada quando o PGDAS-D estiver conciliado no período ou grupo e o analista
+tiver aprovado o cenário de taxas; leia `simular-credito-ibs-cbs` antes de rodá-la.
+
 Pare quando:
 
 - houver `required_inputs` que dependam do usuário ou do analista;
@@ -68,5 +72,5 @@ Não apresente códigos, nomes de gates, hashes ou pastas de saída, salvo se o 
 - Observação não bloqueante não vira exigência do usuário.
 - Ausência documental não comprova não emissão.
 - Classificação automática não substitui aprovação humana quando a regra exigir decisão do analista.
-- O ciclo atual cobre empresas do Simples Nacional até a conciliação do PGDAS-D; o UC-004 material ainda não está implementado.
+- O ciclo atual cobre empresas do Simples Nacional até a conciliação do PGDAS-D; o UC-004 produz somente simulação de planejamento e não autoriza crédito legal.
 - Grupos com vários estabelecimentos permanecem parciais enquanto as respectivas pastas não forem analisadas individualmente.

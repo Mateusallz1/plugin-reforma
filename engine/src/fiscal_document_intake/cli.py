@@ -9,6 +9,11 @@ from .acquisition import review_acquisitions_folder, write_acquisition_outputs
 from .content import extract_content_folder, write_content_outputs
 from .core import ValidationError, validate_folder, write_outputs
 from .counterparties import review_counterparties_folder, write_counterparty_outputs
+from .credit_planning import (
+    plan_credit_folder,
+    plan_credit_portfolio,
+    write_credit_outputs,
+)
 from .planning_status import evaluate_planning_status, write_planning_status_outputs
 from .portfolio_batch import process_portfolio_periods
 from .portfolio_review import (
@@ -76,6 +81,14 @@ def build_parser() -> argparse.ArgumentParser:
     counterparties.add_argument("folder", type=Path)
     counterparties.add_argument("--simples-registry", type=Path)
     counterparties.add_argument("--meeting-report", action="store_true")
+    credit = subparsers.add_parser(
+        "plan-credit-simulation",
+        help="Simular crédito e exposição comercial do UC-004",
+    )
+    credit.add_argument("folder", type=Path)
+    credit.add_argument("--scenario", type=Path)
+    credit.add_argument("--output-dir", type=Path)
+    credit.add_argument("--meeting-report", action="store_true")
     planning_status = subparsers.add_parser(
         "planning-status",
         help="Identificar o estágio atual e a próxima ação útil do planejamento",
@@ -259,6 +272,27 @@ def main(argv: list[str] | None = None) -> int:
                 "sales_to_individuals": result["customer_summary"][
                     "sales_to_individuals"
                 ],
+                "outputs": [path.name for path in written],
+            }
+        elif args.command == "plan-credit-simulation":
+            if (args.folder / "03_SAIDAS" / "validation-result.json").is_file():
+                result = plan_credit_folder(args.folder, scenario_path=args.scenario)
+            else:
+                result = plan_credit_portfolio(args.folder, scenario_path=args.scenario)
+            output_dir = args.output_dir or args.folder / "10_PLANEJAMENTO_CREDITOS"
+            written = write_credit_outputs(
+                result, output_dir, meeting_report=args.meeting_report
+            )
+            ready = True
+            response = {
+                "status": "CREDIT_PLANNING_SIMULATION_READY",
+                "use_case": result["use_case"],
+                "mode": result["mode"],
+                "recommendation": result["customer_exposure"]["recommendation"],
+                "estimated_credit": result["supplier_credit"].get(
+                    "estimated_credit", "0.00"
+                ),
+                "simulation_only": True,
                 "outputs": [path.name for path in written],
             }
         elif args.command == "planning-status":

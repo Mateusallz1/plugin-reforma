@@ -499,9 +499,9 @@ def _load_registry(
     return result
 
 
-def _status_from_values(values: set[str]) -> str:
+def _status_from_values(values: set[str], *, missing_status: str = "UNKNOWN") -> str:
     if not values:
-        return "UNKNOWN"
+        return missing_status
     if len(values) == 1:
         return next(iter(values))
     return "DIVERGENTE_NO_PERIODO"
@@ -512,11 +512,13 @@ def _crt_status(value: str) -> str | None:
     if normalized in {"OPTANTE_SIMPLES", "NAO_OPTANTE_SIMPLES"}:
         return normalized
     normalized = _digits(value)
-    if normalized in {"1", "2", "4"}:
+    if normalized in {"1", "2"}:
         return "OPTANTE_SIMPLES"
+    if normalized == "4":
+        return "MEI"
     if normalized == "3":
         return "NAO_OPTANTE_SIMPLES"
-    return None
+    return "REGIME_INDETERMINADO"
 
 
 def _aggregate_party(
@@ -569,14 +571,26 @@ def _aggregate_party(
             for value in entry["crt_values"]
             if (status := _crt_status(value)) is not None
         }
+        document_status = _status_from_values(
+            document_statuses,
+            missing_status=(
+                "REGIME_INDETERMINADO" if role == "SUPPLIER" else "UNKNOWN"
+            ),
+        )
         registry_entry = registry.get(cnpj)
         registry_status = registry_entry.get("status") if registry_entry else None
         if registry_status:
             entry["evidence_sources"].add(
                 registry_entry.get("source", "LOCAL_REGISTRY")
             )
-        document_status = _status_from_values(document_statuses)
-        if len(entry["crt_values"]) > 1:
+        if registry_status and document_status in {
+            "UNKNOWN",
+            "REGIME_INDETERMINADO",
+        }:
+            status = registry_status
+        elif document_status == "REGIME_INDETERMINADO":
+            status = "REGIME_INDETERMINADO"
+        elif len(document_statuses) > 1:
             status = "DIVERGENTE_NO_PERIODO"
         elif registry_status and document_status not in {"UNKNOWN", registry_status}:
             status = "EVIDENCIA_CONFLITANTE"
@@ -601,6 +615,7 @@ def _aggregate_party(
                 "document_total": _money(entry["document_total"]),
                 "document_refs": sorted(entry["document_refs"]),
                 "crt_values": sorted(entry["crt_values"]),
+                "document_regime_status": document_status,
                 "evidence_sources": sorted(entry["evidence_sources"]),
             }
         )

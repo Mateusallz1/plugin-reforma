@@ -264,4 +264,44 @@ def test_counterparties_preserve_distinct_crt_values_in_one_competence(
     supplier = result["_private_suppliers"][0]
 
     assert supplier["crt_values"] == ["1", "2"]
-    assert supplier["simples_status"] == "DIVERGENTE_NO_PERIODO"
+    assert supplier["document_regime_status"] == "OPTANTE_SIMPLES"
+    assert supplier["simples_status"] == "OPTANTE_SIMPLES"
+
+
+def test_counterparties_mark_missing_and_invalid_supplier_crt_as_indeterminate(
+    tmp_path: Path,
+) -> None:
+    folder = make_folder(tmp_path, "indeterminate-crt", document_families=["NFE"])
+    missing_key = access_key(OTHER, "55", 129)
+    invalid_supplier = "11222333000144"
+    invalid_key = access_key(invalid_supplier, "55", 130)
+    (folder / "01_XML" / "missing.xml").write_text(
+        nfe_xml(missing_key, "55", OTHER, COMPANY, "2026-03-05", "100.00"),
+        encoding="utf-8",
+    )
+    (folder / "01_XML" / "invalid.xml").write_text(
+        nfe_xml(
+            invalid_key,
+            "55",
+            invalid_supplier,
+            COMPANY,
+            "2026-03-06",
+            "200.00",
+        ).replace("</emit>", "<CRT>9</CRT></emit>"),
+        encoding="utf-8",
+    )
+    _prepare(folder)
+
+    result = review_counterparties_folder(folder)
+    suppliers = {
+        supplier["cnpj"]: supplier for supplier in result["_private_suppliers"]
+    }
+
+    assert suppliers[OTHER]["document_regime_status"] == "REGIME_INDETERMINADO"
+    assert suppliers[OTHER]["simples_status"] == "REGIME_INDETERMINADO"
+    assert suppliers[OTHER]["crt_values"] == []
+    assert (
+        suppliers[invalid_supplier]["document_regime_status"] == "REGIME_INDETERMINADO"
+    )
+    assert suppliers[invalid_supplier]["simples_status"] == "REGIME_INDETERMINADO"
+    assert suppliers[invalid_supplier]["crt_values"] == ["9"]
