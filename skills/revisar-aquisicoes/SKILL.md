@@ -25,6 +25,7 @@ Execute o UC-003 somente quando `04_CONTEUDO/content-summary.json` indicar `uc00
 
 - Revise somente registros de direção `ENTRADA`: produtos como `PURCHASE_GOODS`, serviços como `PURCHASE_SERVICES` e transportes como `PURCHASE_TRANSPORT`.
 - Nas NF-e/NFC-e, não trate toda entrada como compra: devolução de venda, remessa, retorno, transferência e operação sem compra ficam fora do total confirmado e aparecem como contexto ou pendência.
+- O resumo e o relatório demonstram `excluded_operation_counts` por motivo CFOP, com documentos e itens excluídos; isso não cria rateio financeiro entre motivos.
 - O total documental de compras usa o `vNF` de cada documento único; `category_amounts` continua sendo subtotal dos itens para análise operacional.
 - Não suponha a natureza da aquisição. Sem decisão `APROVADO` em `00_CONTROLE/classificacao-aquisicoes.csv`, mantenha `PENDING_ANALYST_CLASSIFICATION`.
 - A validação CST/cClassTrib comprova somente que o par declarado existe, estava vigente na competência e é aplicável ao tipo de DF-e no snapshot oficial.

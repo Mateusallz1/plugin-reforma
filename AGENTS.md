@@ -29,6 +29,7 @@
 - `.reforma-tributaria/` contém estado privado da carteira e deve permanecer ignorada pelo Git. Resultados públicos retornam somente referências relativas, nunca caminhos empresariais absolutos.
 - Antes de usar a tabela CST/cClassTrib, confira a publicação oficial atual. Divergência de versão exige manutenção explícita do snapshot e nova bateria de testes.
 - A revisão de receitas usa o total do documento, direção e CFOP. CFOP de venda em entrada continua sendo compra; remessa, retorno, anulação e devolução de compra ficam fora da receita operacional.
+- Na revisão de aquisições, entradas que não são compras permanecem fora da população detalhada, mas devem ser demonstradas no resumo por motivo CFOP em `excluded_operation_counts`, sem rateio financeiro automático.
 - A composição de `vNF` usa os totais declarados em `ICMSTot`/`ISSQNtot`, conferidos contra `vProd` e `indTot` dos itens. Não some valores de item e totais do documento duas vezes; resíduo não explicado mantém a revisão pendente.
 - Checklist do analista complementa a tabela CFOP oficial e não é exaustivo. `ind_excluded_ibs_cbs` não equivale sozinho a operação sem receita.
 - O UC-003C usa a declaração PGDAS-D como autoridade, concilia primeiro por estabelecimento e atividade e preserva cobertura parcial. Ausência de suporte documental não comprova não emissão; `non_issuance_confirmed` permanece falso sem decisão humana expressa.

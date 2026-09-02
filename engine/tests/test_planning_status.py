@@ -71,6 +71,9 @@ def write_acquisition(folder: Path, *, analyst_review: bool = True) -> None:
                 "document_count": 1,
                 "pending_document_count": 0,
             },
+            "excluded_operation_counts": {
+                "NON_REVENUE_REMITTANCE": {"document_count": 1, "item_count": 2}
+            },
             "gates": {
                 "uc003_execution_ready": True,
                 "analyst_review_required": analyst_review,
@@ -415,6 +418,9 @@ def test_status_shows_purchase_sales_comparison_without_new_gate(
     assert comparison["gross_documentary_purchases"] == "125.00"
     assert comparison["gross_operational_revenue"] == "875.00"
     assert comparison["purchase_to_revenue_ratio"] == "0.1429"
+    assert result["documentary_summary"]["acquisitions"][
+        "excluded_operation_counts"
+    ] == {"NON_REVENUE_REMITTANCE": {"document_count": 1, "item_count": 2}}
     assert result["status"] == "NEEDS_USER_INPUT"
 
     report = write_planning_status_outputs(result, folder / "08_STATUS_PLANEJAMENTO")[
@@ -422,6 +428,7 @@ def test_status_shows_purchase_sales_comparison_without_new_gate(
     ].read_text(encoding="utf-8")
     assert "### Compras documentais × vendas documentais" in report
     assert "| Relação compras/receita | 0.1429 |" in report
+    assert "NON_REVENUE_REMITTANCE" in report
 
 
 @pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="Windows launcher")

@@ -3,6 +3,15 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+NON_PURCHASE_OPERATION_CLASSES = frozenset(
+    {
+        "SALES_RETURN_INBOUND",
+        "NON_REVENUE_ANNULMENT",
+        "NON_REVENUE_RETURN",
+        "NON_REVENUE_REMITTANCE",
+    }
+)
+
 
 def _cfop_current(record: dict[str, Any], period_start: date, period_end: date) -> bool:
     effective_from = date.fromisoformat(record["effective_from"])
@@ -60,6 +69,21 @@ def classify_acquisition_product_item(
 ) -> tuple[str, dict[str, Any] | None]:
     """Map the shared operation classes to purchase-side semantics."""
 
+    status, official, _ = classify_acquisition_product_item_with_reason(
+        record, cfop_index, inbound_return_cfops, period_start, period_end
+    )
+    return status, official
+
+
+def classify_acquisition_product_item_with_reason(
+    record: dict[str, Any],
+    cfop_index: dict[str, dict[str, Any]],
+    inbound_return_cfops: set[str],
+    period_start: date,
+    period_end: date,
+) -> tuple[str, dict[str, Any] | None, str]:
+    """Return purchase status while preserving the original CFOP reason."""
+
     classification, official = classify_product_item(
         record,
         cfop_index,
@@ -69,12 +93,7 @@ def classify_acquisition_product_item(
         period_end,
     )
     if classification == "PURCHASE_CONTEXT":
-        return classification, official
-    if classification in {
-        "SALES_RETURN_INBOUND",
-        "NON_REVENUE_ANNULMENT",
-        "NON_REVENUE_RETURN",
-        "NON_REVENUE_REMITTANCE",
-    }:
-        return "NON_PURCHASE_ENTRY", official
-    return "PENDING_PURCHASE_TREATMENT", official
+        return classification, official, classification
+    if classification in NON_PURCHASE_OPERATION_CLASSES:
+        return "NON_PURCHASE_ENTRY", official, classification
+    return "PENDING_PURCHASE_TREATMENT", official, classification

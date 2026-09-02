@@ -48,6 +48,7 @@
 - [x] Devoluções e remessas orientadas pelos indicadores oficiais, com checklist do analista separado.
 - [x] UC-003C com parser do PGDAS-D, conciliação por estabelecimento e atividade e cobertura parcial sem presunção de não emissão.
 - [x] Totais documentais de compras por documento único, separação de entradas sem compra e comparação informativa com vendas por competência.
+- [x] Demonstração das operações de entrada excluídas por motivo CFOP, sem rateio financeiro automático.
 - [x] Coordenador `planejar-reforma-tributaria` com retomada por estado, execução automática segura e solicitações em linguagem comum.
 - [x] Fila conversacional da carteira com agrupamento, SQLite local, alcance explícito, reaplicação e exportação opcional.
 - [x] Processamento incremental de várias competências, com paralelismo limitado, isolamento de falhas e retomada por manifesto local.

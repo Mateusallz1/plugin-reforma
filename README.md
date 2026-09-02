@@ -88,6 +88,9 @@ O resumo também publica `documentary_totals`: cada documento de entrada é
 contado uma única vez pelo seu total declarado, com subtotais por tipo e grupo,
 devoluções e operações que não representam compra. Documentos mistos ficam em
 tratamento pendente; compras sem crédito continuam no total documental.
+As operações excluídas também são demonstradas por motivo CFOP, com contagem de
+documentos e itens, sem ratear valores quando um documento tiver mais de uma
+operação.
 
 ## Revisão das receitas
 

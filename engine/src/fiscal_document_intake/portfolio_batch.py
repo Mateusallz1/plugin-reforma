@@ -42,7 +42,7 @@ from .simple_reconciliation import (
     write_simple_reconciliation_outputs,
 )
 
-BATCH_SCHEMA_VERSION = "1.3.0"
+BATCH_SCHEMA_VERSION = "1.4.0"
 STATE_FOLDER = ".reforma-tributaria"
 MANIFEST_FILE = "processamento-lote-manifest.json"
 CONFIG_FILE = "configuracao-lote.local.json"

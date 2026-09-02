@@ -133,7 +133,8 @@ não misturar mudança de nome e de cálculo. Adicionar ao `acquisition-summary.
     "by_document_type": {},
     "by_analysis_group": {},
     "cross_document_linkage": "NOT_PERFORMED"
-  }
+  },
+  "excluded_operation_counts": {}
 }
 ```
 
@@ -295,15 +296,25 @@ e evidência preenchidos produzem estado confirmado.
 
 Esta entrega não deve reescrever XML, NCM informado ou catálogo existente.
 
+## Correção de transparência das entradas excluídas
+
+Após a implementação do plano, o UC-003 passou a publicar
+`excluded_operation_counts` por motivo CFOP. A população detalhada continua
+restrita à pasta local, mas o resumo e o relatório mostram quantos documentos e
+itens foram excluídos por devolução de venda, remessa, retorno ou anulação. O
+total monetário continua agregado em `non_purchase_entry_operations`, sem
+rateio automático entre motivos. Essa correção elevou o contrato de aquisições
+para `1.3.0`, o status de planejamento para `1.4.0` e o lote para `1.4.0`.
+
 ## Migração e coerência
 
 Ao implementar os contratos:
 
 - `CONTENT_SCHEMA_VERSION`: `1.3.0`;
-- `ACQUISITION_SCHEMA_VERSION`: `1.2.0`;
+- `ACQUISITION_SCHEMA_VERSION`: `1.3.0`;
 - `REVENUE_SCHEMA_VERSION`: `1.3.0`;
-- `PLANNING_STATUS_SCHEMA_VERSION`: `1.3.0`;
-- `BATCH_SCHEMA_VERSION`: `1.3.0`.
+- `PLANNING_STATUS_SCHEMA_VERSION`: `1.4.0`;
+- `BATCH_SCHEMA_VERSION`: `1.4.0`.
 
 Atualizar `_outputs_coherent`, os checks do coordenador e os IDs materiais. Saídas
 anteriores devem ser reprocessadas; não criar migração silenciosa de JSON.

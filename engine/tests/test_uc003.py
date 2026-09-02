@@ -186,6 +186,15 @@ def test_uc003_does_not_count_sales_return_as_purchase(tmp_path: Path) -> None:
     assert result["non_acquisition_records"] == 1
     assert result["documentary_totals"]["gross_documentary_purchases"] == "600.00"
     assert result["documentary_totals"]["non_purchase_entry_operations"] == "50.00"
+    assert result["excluded_operation_counts"] == {
+        "SALES_RETURN_INBOUND": {"document_count": 1, "item_count": 1}
+    }
+    report_path = write_acquisition_outputs(result, folder / "05_REVISAO_AQUISICOES")[
+        -1
+    ]
+    assert "Operações excluídas do total de compras" in report_path.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_uc003_applies_only_approved_compatible_analyst_decisions(

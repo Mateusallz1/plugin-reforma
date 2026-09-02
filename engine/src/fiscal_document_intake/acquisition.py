@@ -19,10 +19,10 @@ from .core import (
     _format_decimal,
     _parse_decimal,
 )
-from .operation_classification import classify_acquisition_product_item
+from .operation_classification import classify_acquisition_product_item_with_reason
 
 ACQUISITION_SCHEMA = "br.com.planejamento-reforma-tributaria/acquisition-review"
-ACQUISITION_SCHEMA_VERSION = "1.2.0"
+ACQUISITION_SCHEMA_VERSION = "1.3.0"
 DECISION_FILE = Path("00_CONTROLE") / "classificacao-aquisicoes.csv"
 ACQUISITION_CATEGORIES = {
     "PRODUCT": "PURCHASE_GOODS",
@@ -289,6 +289,24 @@ def _documentary_totals(
     }
 
 
+def _excluded_operation_counts(
+    document_statuses: dict[str, str],
+    reasons_by_document: dict[str, list[str]],
+) -> dict[str, dict[str, int]]:
+    """Count fully excluded documents by their original CFOP operation reason."""
+
+    counts: dict[str, dict[str, int]] = {}
+    for document_ref, status in document_statuses.items():
+        if status != "NON_PURCHASE_ENTRY":
+            continue
+        reasons = reasons_by_document.get(document_ref, [])
+        for reason in sorted(set(reasons)):
+            entry = counts.setdefault(reason, {"document_count": 0, "item_count": 0})
+            entry["document_count"] += 1
+            entry["item_count"] += reasons.count(reason)
+    return dict(sorted(counts.items()))
+
+
 def review_acquisitions_folder(
     folder: Path | str,
     ruleset_path: Path | str,
@@ -378,8 +396,9 @@ def review_acquisitions_folder(
         }
 
     acquisition_records: list[dict[str, Any]] = []
-    product_operation_by_item: dict[str, tuple[str, dict[str, Any] | None]] = {}
+    product_operation_by_item: dict[str, tuple[str, dict[str, Any] | None, str]] = {}
     product_operations_by_document: dict[str, list[str]] = {}
+    product_operation_reasons_by_document: dict[str, list[str]] = {}
     if cfop_index:
         for source in content_records:
             if (
@@ -387,7 +406,7 @@ def review_acquisitions_folder(
                 or source.get("record_kind") != "PRODUCT"
             ):
                 continue
-            operation = classify_acquisition_product_item(
+            operation = classify_acquisition_product_item_with_reason(
                 source,
                 cfop_index,
                 inbound_return_cfops,
@@ -398,6 +417,9 @@ def review_acquisitions_folder(
             product_operations_by_document.setdefault(
                 source["document_ref"], []
             ).append(operation[0])
+            product_operation_reasons_by_document.setdefault(
+                source["document_ref"], []
+            ).append(operation[2])
 
     document_statuses: dict[str, str] = {}
     for source in content_records:
@@ -423,7 +445,7 @@ def review_acquisitions_folder(
         if record.get("direction") == "ENTRADA"
         and record.get("record_kind") in ACQUISITION_CATEGORIES
         and product_operation_by_item.get(
-            record["item_ref"], ("PURCHASE_CONTEXT", None)
+            record["item_ref"], ("PURCHASE_CONTEXT", None, "PURCHASE_CONTEXT")
         )[0]
         != "NON_PURCHASE_ENTRY"
     }
@@ -440,8 +462,8 @@ def review_acquisitions_folder(
         if category is None:
             continue
         operation_name, official_operation = product_operation_by_item.get(
-            source["item_ref"], ("PURCHASE_CONTEXT", None)
-        )
+            source["item_ref"], ("PURCHASE_CONTEXT", None, "PURCHASE_CONTEXT")
+        )[:2]
         if operation_name == "NON_PURCHASE_ENTRY":
             continue
         record = dict(source)
@@ -493,6 +515,7 @@ def review_acquisitions_folder(
         "decisions_hash": decision_summary["source_hash"],
         "item_refs": [record["item_ref"] for record in acquisition_records],
         "document_statuses": document_statuses,
+        "operation_reasons": product_operation_reasons_by_document,
         "cfop_ruleset": cfop_lock,
         "schema_version": ACQUISITION_SCHEMA_VERSION,
     }
@@ -529,6 +552,9 @@ def review_acquisitions_folder(
     if cfop_lock is not None:
         ruleset_lock["cfop"] = cfop_lock
     documentary_totals = _documentary_totals(validation_records, document_statuses)
+    excluded_operation_counts = _excluded_operation_counts(
+        document_statuses, product_operation_reasons_by_document
+    )
     result = {
         "schema": ACQUISITION_SCHEMA,
         "schema_version": ACQUISITION_SCHEMA_VERSION,
@@ -550,6 +576,7 @@ def review_acquisitions_folder(
         "category_counts": dict(sorted(category_counts.items())),
         "category_amounts": category_amounts,
         "documentary_totals": documentary_totals,
+        "excluded_operation_counts": excluded_operation_counts,
         "purchase_operation_status_counts": dict(
             sorted(
                 Counter(
@@ -636,6 +663,23 @@ def _markdown_report(result: dict[str, Any]) -> str:
             "Subtotais acima usam o total de cada documento uma única vez. Compras sem crédito permanecem incluídas; este relatório não conclui custo econômico ou direito a crédito.",
         ]
     )
+    if result["excluded_operation_counts"]:
+        lines.extend(
+            [
+                "",
+                "### Operações excluídas do total de compras",
+                "",
+                "| Motivo CFOP | Documentos | Itens |",
+                "|---|---:|---:|",
+            ]
+        )
+        for reason, counts in result["excluded_operation_counts"].items():
+            lines.append(
+                f"| `{reason}` | {counts['document_count']} | {counts['item_count']} |"
+            )
+        lines.append(
+            "Os motivos acima são demonstrados sem ratear o valor total de documentos entre operações."
+        )
     lines.extend(
         [
             "",

@@ -18,7 +18,7 @@ from .revenue import REVENUE_SCHEMA_VERSION
 from .simple_reconciliation import SIMPLE_RECONCILIATION_SCHEMA_VERSION
 
 PLANNING_STATUS_SCHEMA = "br.com.planejamento-reforma-tributaria/planning-status"
-PLANNING_STATUS_SCHEMA_VERSION = "1.3.0"
+PLANNING_STATUS_SCHEMA_VERSION = "1.4.0"
 DOCUMENTARY_SUMMARY_SCHEMA = (
     "br.com.planejamento-reforma-tributaria/documentary-summary"
 )
@@ -247,6 +247,9 @@ def _documentary_summary(
             "category_counts": acquisition_data.get("category_counts", {}),
             "category_amounts": acquisition_data.get("category_amounts", {}),
             "documentary_totals": acquisition_data.get("documentary_totals", {}),
+            "excluded_operation_counts": acquisition_data.get(
+                "excluded_operation_counts", {}
+            ),
             "nature_status": acquisition_nature_status,
         },
         "revenue": {
@@ -832,6 +835,7 @@ def _append_documentary_summary(lines: list[str], result: dict[str, Any]) -> Non
     content = _mapping(documentary.get("content"))
     acquisitions = _mapping(documentary.get("acquisitions"))
     acquisition_totals = _mapping(acquisitions.get("documentary_totals"))
+    excluded_operation_counts = _mapping(acquisitions.get("excluded_operation_counts"))
     revenue = _mapping(documentary.get("revenue"))
     revenue_totals = _mapping(revenue.get("totals"))
     comparison = _mapping(documentary.get("purchase_sales_comparison"))
@@ -951,6 +955,21 @@ def _append_documentary_summary(lines: list[str], result: dict[str, Any]) -> Non
                 f"- Operações de entrada fora de compras: {_summary_value(acquisition_totals.get('non_purchase_entry_operations'))}.",
             ]
         )
+    if excluded_operation_counts:
+        lines.extend(
+            [
+                "- Operações de entrada fora de compras por motivo:",
+                "",
+                "| Motivo CFOP | Documentos | Itens |",
+                "|---|---:|---:|",
+            ]
+        )
+        for reason, counts in sorted(excluded_operation_counts.items()):
+            operation_counts = _mapping(counts)
+            lines.append(
+                f"| `{reason}` | {_summary_value(operation_counts.get('document_count'))} | "
+                f"{_summary_value(operation_counts.get('item_count'))} |"
+            )
 
     lines.extend(
         [
