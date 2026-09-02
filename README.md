@@ -138,6 +138,14 @@ são agrupados em `06_REVISAO_RECEITAS/clientes-cnpj-regime.local.jsonl` e podem
 ser resolvidos por um snapshot local JSONL informado ao launcher. Vendas para CPF
 são apenas contadas por documento único; nenhum CPF é persistido.
 
+O mesmo UC-003D grava `fornecedores-produtos.local.jsonl`, com uma linha por
+fornecedor e competência. Cada linha usa a convenção `NOME EMPRESA + CNPJ`,
+separa `OPTANTE_SIMPLES` de `NAO_OPTANTE_SIMPLES` e detalha os produtos
+adquiridos por código/NCM/descrição, quantidade, valor e participação no total.
+Esse arquivo é local e identificado; o resumo público expõe apenas totais por
+regime. Com `-MeetingReport`, o analista pode solicitar também o relatório local
+`09_APRESENTACAO_CLIENTE/fornecedores-produtos.local.md`.
+
 Quando executado diretamente, o UC-003D usa `00_CONTROLE/escopo.json` para
 identificar os CNPJs próprios. No processamento de carteira, usa a identidade
 validada em `.reforma-tributaria/configuracao-lote.local.json`, sem exigir esse

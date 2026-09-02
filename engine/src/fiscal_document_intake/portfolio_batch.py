@@ -29,6 +29,7 @@ from .core import (
 )
 from .counterparties import (
     COUNTERPARTY_SCHEMA_VERSION,
+    SUPPLIER_PRODUCTS_LOCAL_FILE,
     review_counterparties_folder,
     write_counterparty_outputs,
 )
@@ -50,7 +51,7 @@ from .simple_reconciliation import (
     write_simple_reconciliation_outputs,
 )
 
-BATCH_SCHEMA_VERSION = "1.10.0"
+BATCH_SCHEMA_VERSION = "1.11.0"
 STATE_FOLDER = ".reforma-tributaria"
 MANIFEST_FILE = "processamento-lote-manifest.json"
 CONFIG_FILE = "configuracao-lote.local.json"
@@ -369,6 +370,10 @@ def _outputs_coherent(folder: Path) -> bool:
     if (
         supplier_summary.get("schema_version") != COUNTERPARTY_SCHEMA_VERSION
         or supplier_summary.get("role") != "SUPPLIER"
+        or not supplier_summary.get("product_mix")
+        or not (
+            folder / "05_REVISAO_AQUISICOES" / SUPPLIER_PRODUCTS_LOCAL_FILE
+        ).is_file()
         or customer_summary.get("schema_version") != COUNTERPARTY_SCHEMA_VERSION
         or customer_summary.get("role") != "CUSTOMER"
     ):

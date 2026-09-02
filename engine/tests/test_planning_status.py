@@ -11,6 +11,7 @@ from fiscal_document_intake.acquisition import ACQUISITION_SCHEMA_VERSION
 from fiscal_document_intake.cli import main
 from fiscal_document_intake.content import CONTENT_SCHEMA_VERSION
 from fiscal_document_intake.core import DOCUMENT_SCHEMA_VERSION
+from fiscal_document_intake.counterparties import COUNTERPARTY_SCHEMA_VERSION
 from fiscal_document_intake.planning_status import (
     evaluate_planning_status,
     write_planning_status_outputs,
@@ -150,7 +151,7 @@ def write_counterparty_summaries(folder: Path) -> None:
     write_json(
         folder / "05_REVISAO_AQUISICOES" / "fornecedores-regime-summary.json",
         {
-            "schema_version": "1.0.0",
+            "schema_version": COUNTERPARTY_SCHEMA_VERSION,
             "role": "SUPPLIER",
             "supplier_count": 1,
             "by_simples_status": {
@@ -160,12 +161,25 @@ def write_counterparty_summaries(folder: Path) -> None:
                     "document_total": "100.00",
                 }
             },
+            "product_mix": {
+                "basis_status": "AVAILABLE",
+                "supplier_count_with_products": 1,
+                "product_line_count": 3,
+                "product_total": "80.00",
+                "by_simples_status": {
+                    "OPTANTE_SIMPLES": {
+                        "supplier_count_with_products": 1,
+                        "product_line_count": 3,
+                        "product_total": "80.00",
+                    }
+                },
+            },
         },
     )
     write_json(
         folder / "06_REVISAO_RECEITAS" / "clientes-cnpj-regime-summary.json",
         {
-            "schema_version": "1.0.0",
+            "schema_version": COUNTERPARTY_SCHEMA_VERSION,
             "role": "CUSTOMER",
             "cnpj_customer_count": 0,
             "cnpj_by_simples_status": {},
@@ -499,6 +513,15 @@ def test_status_includes_counterparty_summary_without_exposing_identity(
         "document_count": 2,
         "document_total": "200.00",
     }
+    assert (
+        documentary["counterparties"]["suppliers"]["product_mix"]["product_total"]
+        == "80.00"
+    )
+    report = write_planning_status_outputs(result, folder / "08_STATUS_PLANEJAMENTO")[
+        1
+    ].read_text(encoding="utf-8")
+    assert "#### Produtos adquiridos por fornecedor" in report
+    assert "fornecedores-produtos.local.jsonl" in report
 
 
 @pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="Windows launcher")

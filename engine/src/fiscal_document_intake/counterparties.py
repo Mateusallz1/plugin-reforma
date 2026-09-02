@@ -28,8 +28,10 @@ from .core import (
 COUNTERPARTY_SCHEMA = (
     "br.com.planejamento-reforma-tributaria/counterparty-regime-review"
 )
-COUNTERPARTY_SCHEMA_VERSION = "1.0.0"
+COUNTERPARTY_SCHEMA_VERSION = "1.2.0"
 SUPPLIER_LOCAL_FILE = "fornecedores-regime.local.jsonl"
+SUPPLIER_PRODUCTS_LOCAL_FILE = "fornecedores-produtos.local.jsonl"
+SUPPLIER_PRODUCTS_REPORT_FILE = "fornecedores-produtos.local.md"
 CUSTOMER_LOCAL_FILE = "clientes-cnpj-regime.local.jsonl"
 SUPPLIER_SUMMARY_FILE = "fornecedores-regime-summary.json"
 CUSTOMER_SUMMARY_FILE = "clientes-cnpj-regime-summary.json"
@@ -44,6 +46,22 @@ def _digits(value: Any) -> str:
 
 def _money(value: Any) -> str:
     return _format_decimal(_parse_decimal(value) or Decimal(0)) or "0.00"
+
+
+def _quantity(value: Any) -> str:
+    parsed = _parse_decimal(value) or Decimal(0)
+    return format(parsed.quantize(Decimal("0.0001")), "f")
+
+
+def _percent(value: Decimal, total: Decimal) -> str:
+    if total == 0:
+        return "0.0000"
+    return format((value * Decimal(100) / total).quantize(Decimal("0.0001")), "f")
+
+
+def _party_label(name: Any, cnpj: Any) -> str:
+    normalized_name = " ".join(str(name or "").split()) or "SEM NOME"
+    return f"{normalized_name} + {_digits(cnpj)}"
 
 
 def _sha256(path: Path) -> str:
@@ -224,6 +242,188 @@ def _own_taxpayer_ids(scope_identity: dict[str, Any]) -> set[str]:
     return normalized
 
 
+def _load_acquisition_items(folder: Path) -> tuple[list[dict[str, Any]], str]:
+    path = folder / "05_REVISAO_AQUISICOES" / "acquisition-items.local.jsonl"
+    if not path.is_file():
+        return [], "NOT_AVAILABLE"
+    records: list[dict[str, Any]] = []
+    try:
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+        for line_number, line in enumerate(lines, start=1):
+            if not line.strip():
+                continue
+            value = json.loads(line)
+            if not isinstance(value, dict):
+                raise ValidationError(
+                    f"{path.name} possui linha inválida: {line_number}"
+                )
+            records.append(value)
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ValidationError(
+            "acquisition-items.local.jsonl deve ser JSONL UTF-8 válido"
+        ) from error
+    return records, "AVAILABLE"
+
+
+def _product_key(record: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(record.get("product_code") or "").strip(),
+        str(record.get("ncm") or "").strip(),
+        " ".join(str(record.get("description") or "").split()).casefold(),
+    )
+
+
+def _supplier_product_mix(
+    suppliers: list[dict[str, Any]],
+    supplier_inputs: list[dict[str, Any]],
+    acquisition_items: list[dict[str, Any]],
+    product_basis_status: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    supplier_by_document = {
+        record["document_ref"]: _digits(record.get("party_id"))
+        for record in supplier_inputs
+        if record.get("document_ref") and len(_digits(record.get("party_id"))) == 14
+    }
+    grouped: dict[str, dict[tuple[str, str, str], dict[str, Any]]] = defaultdict(
+        lambda: defaultdict(
+            lambda: {
+                "product_code": "",
+                "ncm": "",
+                "description": "",
+                "units_observed": set(),
+                "item_count": 0,
+                "quantity": Decimal(0),
+                "item_total": Decimal(0),
+            }
+        )
+    )
+    for item in acquisition_items:
+        if (
+            item.get("direction") != "ENTRADA"
+            or item.get("record_kind") != "PRODUCT"
+            or item.get("eligible_for_uc003") is not True
+            or item.get("purchase_operation_status") != "PURCHASE_CONTEXT"
+        ):
+            continue
+        supplier_cnpj = supplier_by_document.get(item.get("document_ref"))
+        if not supplier_cnpj:
+            continue
+        key = _product_key(item)
+        product = grouped[supplier_cnpj][key]
+        product["product_code"] = str(item.get("product_code") or "").strip()
+        product["ncm"] = str(item.get("ncm") or "").strip()
+        product["description"] = " ".join(str(item.get("description") or "").split())
+        unit = str(item.get("unit") or "").strip()
+        if unit:
+            product["units_observed"].add(unit)
+        product["item_count"] += 1
+        product["quantity"] += _parse_decimal(item.get("quantity")) or Decimal(0)
+        product["item_total"] += _parse_decimal(item.get("gross_amount")) or Decimal(0)
+
+    product_totals = {
+        supplier_cnpj: sum(
+            (item["item_total"] for item in products.values()), Decimal(0)
+        )
+        for supplier_cnpj, products in grouped.items()
+    }
+    portfolio_total = sum(product_totals.values(), Decimal(0))
+    product_mix: list[dict[str, Any]] = []
+    for supplier in suppliers:
+        cnpj = supplier["cnpj"]
+        products = []
+        for product in sorted(
+            grouped.get(cnpj, {}).values(),
+            key=lambda item: (
+                -item["item_total"],
+                item["description"].casefold(),
+                item["product_code"],
+                item["ncm"],
+            ),
+        ):
+            products.append(
+                {
+                    "product_code": product["product_code"],
+                    "ncm": product["ncm"],
+                    "description": product["description"],
+                    "units_observed": sorted(product["units_observed"]),
+                    "item_count": product["item_count"],
+                    "quantity": _quantity(product["quantity"]),
+                    "item_total": _money(product["item_total"]),
+                    "share_of_supplier_products": _percent(
+                        product["item_total"], product_totals.get(cnpj, Decimal(0))
+                    ),
+                    "share_of_portfolio_products": _percent(
+                        product["item_total"], portfolio_total
+                    ),
+                }
+            )
+        supplier_total = product_totals.get(cnpj, Decimal(0))
+        product_mix.append(
+            {
+                "schema": COUNTERPARTY_SCHEMA,
+                "schema_version": COUNTERPARTY_SCHEMA_VERSION,
+                "role": "SUPPLIER_PRODUCT_MIX",
+                "party_type": "CNPJ",
+                "cnpj": cnpj,
+                "name": supplier["name"],
+                "name_cnpj": _party_label(supplier["name"], cnpj),
+                "competence": supplier["competence"],
+                "simples_status": supplier["simples_status"],
+                "document_count": supplier["document_count"],
+                "document_total": supplier["document_total"],
+                "product_line_count": sum(item["item_count"] for item in products),
+                "product_distinct_count": len(products),
+                "product_total": _money(supplier_total),
+                "share_of_portfolio_products": _percent(
+                    supplier_total, portfolio_total
+                ),
+                "products": products,
+            }
+        )
+
+    by_status: dict[str, dict[str, Any]] = {}
+    for supplier in product_mix:
+        status = supplier["simples_status"]
+        group = by_status.setdefault(
+            status,
+            {
+                "supplier_count": 0,
+                "supplier_count_with_products": 0,
+                "product_line_count": 0,
+                "product_distinct_count": 0,
+                "product_total": Decimal(0),
+            },
+        )
+        group["supplier_count"] += 1
+        if supplier["product_line_count"]:
+            group["supplier_count_with_products"] += 1
+        group["product_line_count"] += supplier["product_line_count"]
+        group["product_distinct_count"] += supplier["product_distinct_count"]
+        group["product_total"] += _parse_decimal(supplier["product_total"]) or Decimal(
+            0
+        )
+    summary = {
+        "basis_status": product_basis_status,
+        "supplier_count": len(product_mix),
+        "supplier_count_with_products": sum(
+            item["product_line_count"] > 0 for item in product_mix
+        ),
+        "product_line_count": sum(item["product_line_count"] for item in product_mix),
+        "product_distinct_count": sum(
+            item["product_distinct_count"] for item in product_mix
+        ),
+        "product_total": _money(portfolio_total),
+        "by_simples_status": {
+            status: {
+                **values,
+                "product_total": _money(values["product_total"]),
+            }
+            for status, values in sorted(by_status.items())
+        },
+    }
+    return product_mix, summary
+
+
 def _period_bounds(period: str) -> tuple[date, date]:
     if PERIOD_PATTERN.fullmatch(period) is None:
         raise ValidationError("A competência deve estar no formato AAAA-MM")
@@ -390,6 +590,13 @@ def _aggregate_party(
                 **entry,
                 "name": entry["name"]
                 or (min(entry["names_observed"]) if entry["names_observed"] else ""),
+                "name_cnpj": _party_label(
+                    entry["name"]
+                    or (
+                        min(entry["names_observed"]) if entry["names_observed"] else ""
+                    ),
+                    cnpj,
+                ),
                 "names_observed": sorted(entry["names_observed"]),
                 "document_total": _money(entry["document_total"]),
                 "document_refs": sorted(entry["document_refs"]),
@@ -491,6 +698,13 @@ def review_counterparties_folder(
         # recipient. Customer regime requires the optional local registry.
         document_evidence={},
     )
+    acquisition_items, product_basis_status = _load_acquisition_items(base)
+    supplier_products, product_mix_summary = _supplier_product_mix(
+        suppliers,
+        supplier_inputs,
+        acquisition_items,
+        product_basis_status,
+    )
 
     def public_by_status(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         grouped: dict[str, dict[str, Any]] = {}
@@ -524,6 +738,7 @@ def review_counterparties_folder(
         "competence": period,
         "supplier_count": len(suppliers),
         "by_simples_status": public_by_status(suppliers),
+        "product_mix": product_mix_summary,
         "registry_status": "LOADED" if registry else "ABSENT",
     }
     customer_summary = {
@@ -551,6 +766,7 @@ def review_counterparties_folder(
         "supplier_summary": supplier_summary,
         "customer_summary": customer_summary,
         "_private_suppliers": suppliers,
+        "_private_supplier_products": supplier_products,
         "_private_customers": customers,
     }
 
@@ -564,25 +780,25 @@ def _meeting_report(result: dict[str, Any]) -> str:
         "",
         "## Fornecedores",
         "",
-        "| CNPJ | Nome observado | Simples | Documentos | Valor documental |",
-        "|---|---|---|---:|---:|",
+        "| Empresa + CNPJ | Simples | Documentos | Valor documental |",
+        "|---|---|---:|---:|",
     ]
     for item in result["_private_suppliers"]:
         lines.append(
-            f"| {item['cnpj']} | {item['name']} | {item['simples_status']} | {item['document_count']} | {item['document_total']} |"
+            f"| {item['name_cnpj']} | {item['simples_status']} | {item['document_count']} | {item['document_total']} |"
         )
     lines.extend(
         [
             "",
             "## Clientes CNPJ",
             "",
-            "| CNPJ | Nome observado | Simples | Documentos | Valor documental |",
+            "| Empresa + CNPJ | Simples | Documentos | Valor documental |",
             "|---|---|---|---:|---:|",
         ]
     )
     for item in result["_private_customers"]:
         lines.append(
-            f"| {item['cnpj']} | {item['name']} | {item['simples_status']} | {item['document_count']} | {item['document_total']} |"
+            f"| {item['name_cnpj']} | {item['simples_status']} | {item['document_count']} | {item['document_total']} |"
         )
     lines.extend(
         [
@@ -596,6 +812,54 @@ def _meeting_report(result: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _supplier_products_report(result: dict[str, Any]) -> str:
+    product_summary = result["supplier_summary"]["product_mix"]
+    lines = [
+        "# Produtos adquiridos por fornecedor",
+        "",
+        f"- Competência: `{result['scope']['period']}`",
+        f"- Base de produtos: `{product_summary['basis_status']}`",
+        f"- Valor total de produtos: {product_summary['product_total']}",
+        "- Documento de trabalho confidencial; regime é evidência documental e não conclui crédito.",
+        "",
+    ]
+    for supplier in result["_private_supplier_products"]:
+        lines.extend(
+            [
+                f"## {supplier['name_cnpj']}",
+                "",
+                f"- Regime documental: `{supplier['simples_status']}`",
+                f"- Valor documental do fornecedor: {supplier['document_total']}",
+                f"- Valor dos produtos: {supplier['product_total']} ({supplier['share_of_portfolio_products']}% do total)",
+                f"- Linhas de produto: {supplier['product_line_count']}; produtos distintos: {supplier['product_distinct_count']}",
+                "",
+            ]
+        )
+        if not supplier["products"]:
+            lines.extend(
+                [
+                    "Nenhum produto elegível no recorte; os documentos podem ser serviço ou transporte.",
+                    "",
+                ]
+            )
+            continue
+        lines.extend(
+            [
+                "| Código | NCM | Descrição | Quantidade | Valor | % do fornecedor |",
+                "|---|---|---|---:|---:|---:|",
+            ]
+        )
+        for product in supplier["products"]:
+            description = (
+                str(product["description"]).replace("|", "/").replace("\n", " ")
+            )
+            lines.append(
+                f"| {product['product_code']} | {product['ncm']} | {description} | {product['quantity']} | {product['item_total']} | {product['share_of_supplier_products']}% |"
+            )
+        lines.append("")
+    return "\n".join(lines) + "\n"
+
+
 def write_counterparty_outputs(
     result: dict[str, Any], folder: Path | str, *, meeting_report: bool = False
 ) -> list[Path]:
@@ -606,6 +870,7 @@ def write_counterparty_outputs(
     customer_dir.mkdir(parents=True, exist_ok=True)
     supplier_summary_path = supplier_dir / SUPPLIER_SUMMARY_FILE
     supplier_local_path = supplier_dir / SUPPLIER_LOCAL_FILE
+    supplier_products_path = supplier_dir / SUPPLIER_PRODUCTS_LOCAL_FILE
     customer_summary_path = customer_dir / CUSTOMER_SUMMARY_FILE
     customer_local_path = customer_dir / CUSTOMER_LOCAL_FILE
     supplier_summary_path.write_text(
@@ -619,6 +884,13 @@ def write_counterparty_outputs(
         "".join(
             json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n"
             for item in result["_private_suppliers"]
+        ),
+        encoding="utf-8",
+    )
+    supplier_products_path.write_text(
+        "".join(
+            json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n"
+            for item in result["_private_supplier_products"]
         ),
         encoding="utf-8",
     )
@@ -639,6 +911,7 @@ def write_counterparty_outputs(
     written = [
         supplier_summary_path,
         supplier_local_path,
+        supplier_products_path,
         customer_summary_path,
         customer_local_path,
     ]
@@ -648,4 +921,9 @@ def write_counterparty_outputs(
         meeting_path = meeting_dir / MEETING_REPORT_FILE
         meeting_path.write_text(_meeting_report(result), encoding="utf-8")
         written.append(meeting_path)
+        products_report_path = meeting_dir / SUPPLIER_PRODUCTS_REPORT_FILE
+        products_report_path.write_text(
+            _supplier_products_report(result), encoding="utf-8"
+        )
+        written.append(products_report_path)
     return written

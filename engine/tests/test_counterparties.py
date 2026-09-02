@@ -7,6 +7,9 @@ from fiscal_document_intake.cli import main
 from fiscal_document_intake.content import extract_content_folder
 from fiscal_document_intake.core import validate_folder, write_outputs
 from fiscal_document_intake.counterparties import (
+    SUPPLIER_PRODUCTS_LOCAL_FILE,
+    SUPPLIER_PRODUCTS_REPORT_FILE,
+    SUPPLIER_SUMMARY_FILE,
     review_counterparties_folder,
     write_counterparty_outputs,
 )
@@ -158,6 +161,87 @@ def test_counterparties_accept_batch_identity_without_period_scope(
 
     assert result["customer_summary"]["sales_to_individuals"]["document_count"] == 0
     assert result["customer_summary"]["cnpj_customer_count"] == 1
+
+
+def test_counterparties_publish_supplier_product_mix_only_in_local_artifacts(
+    tmp_path: Path,
+) -> None:
+    folder = make_folder(tmp_path, "product-mix", document_families=["NFE"])
+    first_key = access_key(OTHER, "55", 127)
+    second_key = access_key(OTHER, "55", 128)
+    first_xml = nfe_xml(
+        first_key, "55", OTHER, COMPANY, "2026-03-05", "150.00"
+    ).replace("</emit>", "<CRT>1</CRT></emit>")
+    second_xml = nfe_xml(
+        second_key, "55", OTHER, COMPANY, "2026-03-06", "300.00"
+    ).replace("</emit>", "<CRT>1</CRT></emit>")
+    (folder / "01_XML" / "first.xml").write_text(first_xml, encoding="utf-8")
+    (folder / "01_XML" / "second.xml").write_text(second_xml, encoding="utf-8")
+    _prepare(folder)
+    acquisition_dir = folder / "05_REVISAO_AQUISICOES"
+    acquisition_dir.mkdir(exist_ok=True)
+    items = [
+        {
+            "document_ref": "DOC-NOT-USED",
+            "record_kind": "PRODUCT",
+            "direction": "ENTRADA",
+            "eligible_for_uc003": True,
+            "purchase_operation_status": "PURCHASE_CONTEXT",
+            "product_code": "1",
+            "ncm": "01012100",
+            "description": "ITEM A",
+            "unit": "UN",
+            "quantity": "2.0000",
+            "gross_amount": "100.00",
+        }
+    ]
+    first_ref = json.loads(
+        (folder / "03_SAIDAS" / "validation-result.json").read_text(encoding="utf-8")
+    )["documents"]["records"][0]["document_ref"]
+    second_ref = json.loads(
+        (folder / "03_SAIDAS" / "validation-result.json").read_text(encoding="utf-8")
+    )["documents"]["records"][1]["document_ref"]
+    items.extend(
+        [
+            {**items[0], "document_ref": first_ref, "gross_amount": "100.00"},
+            {
+                **items[0],
+                "document_ref": first_ref,
+                "product_code": "2",
+                "description": "ITEM B",
+                "quantity": "1.0000",
+                "gross_amount": "50.00",
+            },
+            {**items[0], "document_ref": second_ref, "gross_amount": "300.00"},
+        ]
+    )
+    acquisition_dir.joinpath("acquisition-items.local.jsonl").write_text(
+        "".join(json.dumps(item) + "\n" for item in items[1:]), encoding="utf-8"
+    )
+
+    result = review_counterparties_folder(folder)
+    supplier = result["_private_supplier_products"][0]
+
+    assert supplier["name_cnpj"].endswith(f" + {OTHER}")
+    assert supplier["simples_status"] == "OPTANTE_SIMPLES"
+    assert supplier["product_line_count"] == 3
+    assert supplier["product_distinct_count"] == 2
+    assert supplier["product_total"] == "450.00"
+    assert supplier["share_of_portfolio_products"] == "100.0000"
+    assert result["supplier_summary"]["product_mix"]["product_total"] == "450.00"
+
+    written = write_counterparty_outputs(result, folder, meeting_report=True)
+    product_local = folder / "05_REVISAO_AQUISICOES" / SUPPLIER_PRODUCTS_LOCAL_FILE
+    product_report = folder / "09_APRESENTACAO_CLIENTE" / SUPPLIER_PRODUCTS_REPORT_FILE
+    assert product_local in written
+    assert product_report in written
+    assert OTHER in product_local.read_text(encoding="utf-8")
+    assert "ITEM A" in product_report.read_text(encoding="utf-8")
+    public = (folder / "05_REVISAO_AQUISICOES" / SUPPLIER_SUMMARY_FILE).read_text(
+        encoding="utf-8"
+    )
+    assert OTHER not in public
+    assert "ITEM A" not in public
 
 
 def test_counterparties_preserve_distinct_crt_values_in_one_competence(

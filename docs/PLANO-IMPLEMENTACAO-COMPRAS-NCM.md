@@ -324,7 +324,17 @@ restrita à pasta local, mas o resumo e o relatório mostram o valor dos
 documentos distintos e quantos documentos e itens foram excluídos por devolução
 de venda, remessa, retorno ou anulação. O total monetário é contado uma vez e
 não é rateado entre motivos. Essa correção elevou o contrato de aquisições
-para `1.5.0`, o status de planejamento para `1.8.0` e o lote para `1.10.0`.
+para `1.5.0`, o status de planejamento para `1.9.0` e o lote para `1.11.0`.
+
+## Mix de produtos por fornecedor
+
+O UC-003D também grava `fornecedores-produtos.local.jsonl`, uma linha por
+fornecedor e competência, relacionando `NOME EMPRESA + CNPJ`, regime documental,
+produtos elegíveis, quantidade, valor e participação no total de produtos. O
+resumo público expõe somente esses totais agregados por regime; o detalhamento
+identificado é produzido apenas no relatório local solicitado pelo analista.
+Essa extensão elevou `COUNTERPARTY_SCHEMA_VERSION` para `1.2.0` e
+`DOCUMENTARY_SUMMARY_SCHEMA_VERSION` para `1.1.0`.
 
 ## Migração e coerência
 
@@ -333,8 +343,10 @@ Ao implementar os contratos:
 - `CONTENT_SCHEMA_VERSION`: `1.4.0`;
 - `ACQUISITION_SCHEMA_VERSION`: `1.5.0`;
 - `REVENUE_SCHEMA_VERSION`: `1.4.0`;
-- `PLANNING_STATUS_SCHEMA_VERSION`: `1.8.0`;
-- `BATCH_SCHEMA_VERSION`: `1.10.0`.
+- `COUNTERPARTY_SCHEMA_VERSION`: `1.2.0`;
+- `DOCUMENTARY_SUMMARY_SCHEMA_VERSION`: `1.1.0`;
+- `PLANNING_STATUS_SCHEMA_VERSION`: `1.9.0`;
+- `BATCH_SCHEMA_VERSION`: `1.11.0`.
 
 Atualizar `_outputs_coherent`, os checks do coordenador e os IDs materiais. Os
 loaders também conferem cada hash com o digest confiável embarcado; uma alteração

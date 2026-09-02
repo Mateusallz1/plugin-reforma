@@ -19,11 +19,11 @@ from .revenue import REVENUE_SCHEMA_VERSION
 from .simple_reconciliation import SIMPLE_RECONCILIATION_SCHEMA_VERSION
 
 PLANNING_STATUS_SCHEMA = "br.com.planejamento-reforma-tributaria/planning-status"
-PLANNING_STATUS_SCHEMA_VERSION = "1.8.0"
+PLANNING_STATUS_SCHEMA_VERSION = "1.9.0"
 DOCUMENTARY_SUMMARY_SCHEMA = (
     "br.com.planejamento-reforma-tributaria/documentary-summary"
 )
-DOCUMENTARY_SUMMARY_SCHEMA_VERSION = "1.0.0"
+DOCUMENTARY_SUMMARY_SCHEMA_VERSION = "1.1.0"
 
 
 def _load_optional(path: Path, label: str) -> dict[str, Any] | None:
@@ -294,7 +294,10 @@ def _documentary_summary(
             ),
         },
         "counterparties": {
-            "suppliers": supplier_summary or {},
+            "suppliers": {
+                **(supplier_summary or {}),
+                "product_mix": _mapping((supplier_summary or {}).get("product_mix")),
+            },
             "customers": customer_summary or {},
         },
         "classification_status": {
@@ -1158,6 +1161,33 @@ def _append_documentary_summary(lines: list[str], result: dict[str, Any]) -> Non
         lines.append(
             "Identificadores completos ficam somente nos artefatos locais autorizados; este resumo é agregado."
         )
+        product_mix = _mapping(suppliers.get("product_mix"))
+        if product_mix:
+            lines.extend(
+                [
+                    "",
+                    "#### Produtos adquiridos por fornecedor",
+                    "",
+                    f"- Base de produtos: `{_summary_value(product_mix.get('basis_status'))}`",
+                    f"- Valor total de produtos: {_summary_value(product_mix.get('product_total'))}",
+                    f"- Fornecedores com produtos: {_summary_value(product_mix.get('supplier_count_with_products'))}",
+                    f"- Linhas de produtos elegíveis: {_summary_value(product_mix.get('product_line_count'))}",
+                    "",
+                    "| Regime documental | Fornecedores | Linhas de produtos | Valor de produtos |",
+                    "|---|---:|---:|---:|",
+                ]
+            )
+            for status, values in sorted(
+                _mapping(product_mix.get("by_simples_status")).items()
+            ):
+                data = _mapping(values)
+                lines.append(
+                    f"| {status} | {_summary_value(data.get('supplier_count_with_products'))} | "
+                    f"{_summary_value(data.get('product_line_count'))} | {_summary_value(data.get('product_total'))} |"
+                )
+            lines.append(
+                "O detalhamento por empresa segue a convenção `NOME EMPRESA + CNPJ` e fica somente em `fornecedores-produtos.local.jsonl` ou no relatório local solicitado."
+            )
 
     if any(value is not None for value in pgdas_totals.values()) or pgdas.get(
         "status"
