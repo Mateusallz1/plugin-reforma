@@ -13,7 +13,7 @@
 - Homologação real: 130 documentos incluídos, três escopos `READY`, sem bloqueadores.
 - UC-002: extração normalizada de produtos, serviços e transportes somente nos grupos operacionais autorizados.
 - Homologação real do UC-002: 130 documentos selecionados, 204 registros, 25 componentes, 44 NF-e reconciliadas e nenhum bloqueador de extração.
-- Testes: 90 aprovados, incluindo ausência de movimento, migração de schemas, composição completa do `vNF`, compras documentais, devoluções, comparação compras × vendas, triagem NCM, diagnóstico de nomenclatura, integridade dos rulesets, regime CAIXA, `natOp`, regressões de hash de conteúdo, coerência das saídas, fechamento SQLite e retomada de aprovações preparadas; Ruff, formatação, empacotamento do snapshot e lock do `uv` aprovados.
+- Testes: 91 aprovados, incluindo ausência de movimento, migração de schemas, composição completa do `vNF`, compras documentais, devoluções, comparação compras × vendas, triagem NCM, diagnóstico de nomenclatura, integridade dos rulesets, regime CAIXA, `natOp`, consolidação matriz/filiais, regressões de hash de conteúdo, coerência das saídas, fechamento SQLite e retomada de aprovações preparadas; Ruff, formatação, empacotamento do snapshot e lock do `uv` aprovados.
 
 ## Concluído
 
@@ -54,16 +54,20 @@
 - [x] Integridade dos snapshots e rulesets verificada contra hashes confiáveis antes da execução.
 - [x] Aviso não bloqueante para regime de apuração CAIXA.
 - [x] `natOp` documental preservado nos produtos e incluído na assinatura da fila.
+- [x] Consolidação automática de matriz/filiais por competência, derivada da raiz e confirmada pelos documentos e pelo PGDAS-D.
+- [x] UC-003C com saída de grupo versionada (`1.2.0`) e artefatos locais separados da conciliação individual.
+- [x] Lote da carteira com consolidação automática por competência e schema `1.8.0`.
 - [x] Coordenador `planejar-reforma-tributaria` com retomada por estado, execução automática segura e solicitações em linguagem comum.
 - [x] Fila conversacional da carteira com agrupamento, SQLite local, alcance explícito, reaplicação e exportação opcional.
 - [x] Processamento incremental de várias competências, com paralelismo limitado, isolamento de falhas e retomada por manifesto local.
+- [x] Consolidação automática, por competência, dos estabelecimentos comprovados na mesma raiz de carteira.
 
 O snapshot NCM embarcado é `ncm-2026-09-01`, vigente conforme a atualização
 publicada em 01/09/2026, com hash SHA-256 registrado no resumo do UC-002. Ele é
 consultado localmente durante a análise; a atualização é uma tarefa explícita
 de manutenção.
 
-A homologação real da política `COMPLEMENTARY` preservou 130 documentos incluídos e `planning_authorized=true`; sem relatório disponível, `reconciliation_ready=false` e 130 ocorrências `XML_WITHOUT_REPORT` permaneceram como avisos. O UC-002 passou a consumir o schema 1.4.0 sem regressão e manteve os registros elegíveis para o UC-003. A suíte sintética atual tem 90 testes aprovados.
+A homologação real da política `COMPLEMENTARY` preservou 130 documentos incluídos e `planning_authorized=true`; sem relatório disponível, `reconciliation_ready=false` e 130 ocorrências `XML_WITHOUT_REPORT` permaneceram como avisos. O UC-002 passou a consumir o schema 1.4.0 sem regressão e manteve os registros elegíveis para o UC-003. A suíte sintética atual tem 91 testes aprovados.
 
 ## Ajustes desta fase
 
@@ -173,8 +177,6 @@ Na base real, foram descobertas 14 competências fiscais; sete pastas exclusivas
 
 Só iniciar se houver necessidade real e amostras aprovadas:
 
-- consolidação explícita matriz/filial para fechar `group_coverage_complete`, com
-  manifesto de estabelecimentos e competências autorizados;
 - ZIP com limites, deduplicação e origem relativa;
 - NFS-e Nacional e distinção entre NFS-e emitida e DPS;
 - CT-e OS e eventos de CT-e;

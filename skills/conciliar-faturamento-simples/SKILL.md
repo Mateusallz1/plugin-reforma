@@ -15,10 +15,21 @@ Execute o UC-003C somente quando `06_REVISAO_RECEITAS/revenue-summary.json` indi
 4. Para código `2`, apresente as divergências do estabelecimento coberto e pare antes do UC-004.
 5. Para outro código, artefato ausente ou ilegível, diagnostique a falha operacional e consulte [references/uc-003c.md](references/uc-003c.md) somente no ponto necessário.
 
+Quando a raiz indicada contiver mais de um estabelecimento processado na mesma
+competência, use o consolidador da própria convenção de pastas:
+
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-simple-group-reconciliation.ps1 -PortfolioFolder <raiz> -Period <AAAA-MM> -PgdasFolder <pasta PGDAS-D>`
+
+O comando descobre somente as pastas de competência sob a raiz indicada, valida
+que pertencem à mesma empresa e consolida os resumos de receitas. Uma raiz com
+um único estabelecimento continua no fluxo individual acima.
+
 ## Regras
 
 - Use a declaração oficial PGDAS-D como autoridade dos valores declarados. Recibo e extrato confirmam a transmissão; DAS gerado não comprova pagamento; relatórios do sistema contábil são auxiliares.
 - Concilie primeiro por estabelecimento e atividade. Não compare o total consolidado de matriz e filiais com uma base documental de apenas um estabelecimento.
+- A convenção de pastas matriz/filiais é a entrada do consolidador: a confirmação final usa os CNPJs pseudonimizados dos XMLs e os estabelecimentos da declaração, não o nome da pasta isoladamente.
+- O consolidador grava a saída de grupo em `.reforma-tributaria/conciliacoes-simples-grupo/<competência>/` e só marca cobertura integral quando os conjuntos documental e declarado coincidem.
 - `PARTIAL_GROUP_COVERAGE` exige documentos dos estabelecimentos ausentes, mas não transforma a receita descoberta em não emissão.
 - Ausência de documento nunca é ausência de movimento. `NO_MOVEMENT` só pode ser afirmado quando documentação e declaração são zero; declaração positiva sem documento é `DECLARED_WITHOUT_DOCUMENT_SUPPORT`.
 - `DECLARED_WITHOUT_DOCUMENT_SUPPORT` significa somente que o suporte não foi localizado na base fornecida. Registre `NON_ISSUANCE_CONFIRMED` apenas após decisão expressa e evidenciada do analista em evolução própria desse contrato.

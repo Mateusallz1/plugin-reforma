@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import time
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -40,10 +41,11 @@ from .revenue import (
 from .ruleset_integrity import verify_trusted_hash
 from .simple_reconciliation import (
     reconcile_simple_revenue,
+    reconcile_simple_revenue_group,
     write_simple_reconciliation_outputs,
 )
 
-BATCH_SCHEMA_VERSION = "1.6.0"
+BATCH_SCHEMA_VERSION = "1.8.0"
 STATE_FOLDER = ".reforma-tributaria"
 MANIFEST_FILE = "processamento-lote-manifest.json"
 CONFIG_FILE = "configuracao-lote.local.json"
@@ -431,6 +433,64 @@ def _process_period(
         }
 
 
+def _run_group_reconciliations(
+    root: Path, periods: list[dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    by_period: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for item in periods:
+        by_period[item["period"]].append(item)
+    results: dict[str, dict[str, Any]] = {}
+    for period, items in sorted(by_period.items()):
+        if len(items) < 2:
+            continue
+        pgdas_folders = {
+            Path(item["pgdas_folder"]).expanduser().resolve()
+            for item in items
+            if item.get("pgdas_folder") is not None
+        }
+        if len(pgdas_folders) != 1 or sum(
+            item.get("pgdas_folder") is not None for item in items
+        ) != len(items):
+            results[period] = {
+                "status": "NEEDS_PGDAS_FOLDER",
+                "period": period,
+                "documentary_establishments": len(items),
+                "pgdas_establishments": None,
+                "group_coverage_complete": False,
+            }
+            continue
+        try:
+            reconciliation = reconcile_simple_revenue_group(
+                [item["folder"] for item in items], next(iter(pgdas_folders))
+            )
+            output_dir = root / STATE_FOLDER / "conciliacoes-simples-grupo" / period
+            write_simple_reconciliation_outputs(reconciliation, output_dir)
+            results[period] = {
+                "status": reconciliation["status"],
+                "period": period,
+                "documentary_establishments": reconciliation["scope"][
+                    "documentary_establishments"
+                ],
+                "pgdas_establishments": reconciliation["scope"]["pgdas_establishments"],
+                "group_coverage_complete": reconciliation["gates"][
+                    "group_coverage_complete"
+                ],
+                "documentary_scope_reconciled": reconciliation["gates"][
+                    "documentary_scope_reconciled"
+                ],
+            }
+        except (OSError, ValidationError) as error:
+            results[period] = {
+                "status": "GROUP_RECONCILIATION_ERROR",
+                "period": period,
+                "documentary_establishments": len(items),
+                "pgdas_establishments": None,
+                "group_coverage_complete": False,
+                "error": str(error),
+            }
+    return results
+
+
 def _local_report(result: dict[str, Any], path: Path) -> None:
     lines = [
         "# Processamento em lote da carteira",
@@ -451,6 +511,22 @@ def _local_report(result: dict[str, Any], path: Path) -> None:
                 **{**item, "error": item.get("error") or ""}
             )
         )
+    if result.get("group_reconciliations"):
+        lines.extend(
+            [
+                "",
+                "## Conciliações consolidadas de grupo",
+                "",
+                "| Competência | Situação | Estabelecimentos documentais | Estabelecimentos PGDAS-D | Cobertura integral |",
+                "|---|---|---:|---:|---|",
+            ]
+        )
+        for period, group in sorted(result["group_reconciliations"].items()):
+            lines.append(
+                f"| {period} | {group['status']} | {group.get('documentary_establishments', 'não apurado')} | "
+                f"{group.get('pgdas_establishments', 'não apurado')} | "
+                f"{str(group.get('group_coverage_complete', False)).lower()} |"
+            )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -633,6 +709,7 @@ def process_portfolio_periods(
         },
     )
 
+    group_reconciliations = _run_group_reconciliations(root, periods)
     portfolio = review_portfolio(
         root,
         ruleset_path=rules["acquisition"],
@@ -669,6 +746,7 @@ def process_portfolio_periods(
         "failed": failed,
         "workers": workers,
         "rule_integrity": rule_integrity,
+        "group_reconciliations": group_reconciliations,
         "elapsed_seconds": round(time.perf_counter() - started, 3),
         "portfolio_review_groups": portfolio["group_count"],
         "periods": public_periods,

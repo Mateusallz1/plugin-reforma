@@ -39,6 +39,10 @@ Quando o usuário pedir o processamento, execute:
 
 O motor usa dois trabalhadores por padrão, isola falhas por competência e ignora períodos sem alterações. Use `-Force` somente quando o usuário pedir reprocessamento integral ou quando houver manutenção de regra que exija reconstrução.
 
+Quando houver mais de um estabelecimento na mesma competência e o PGDAS-D
+estiver disponível, o processamento executa também a conciliação consolidada do
+grupo. A saída fica na raiz da carteira e não altera as conciliações individuais.
+
 ## Resposta
 
 Informe somente:
@@ -49,6 +53,7 @@ Informe somente:
 - falhas e o que precisam;
 - tempo total;
 - quantidade de grupos na fila central.
+- conciliações consolidadas de grupo realizadas por competência, quando a raiz contiver mais de um estabelecimento.
 
 Não exponha CNPJ, chaves fiscais, hashes, caminhos técnicos ou detalhes comerciais. Diante de falha parcial, não repita as competências concluídas; corrija a entrada necessária e execute o mesmo lote novamente.
 

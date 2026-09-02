@@ -118,6 +118,12 @@ fila Produto × NCM e a evidência comercial detalhada permanecem locais.
 
 O UC-003C recebe uma pasta de PDFs do PGDAS-D explicitamente indicada e usa a declaração oficial como autoridade dos valores declarados. A comparação ocorre primeiro por estabelecimento e atividade; um PGDAS-D consolidado com filial não é comparado diretamente a uma base documental apenas da matriz.
 
+Quando a raiz contiver pastas de matriz e filiais na mesma competência, use o
+consolidador do Simples. Ele descobre os estabelecimentos já processados,
+confirma a mesma empresa pelos identificadores documentais e compara o grupo
+com a declaração. Com um único estabelecimento, o fluxo individual permanece
+inalterado.
+
 As saídas ficam em `07_CONCILIACAO_SIMPLES/`. Cobertura parcial gera fila para o analista sem presumir não emissão. Recibo e extrato são evidências complementares, DAS não comprova pagamento e memória do sistema contábil não substitui a declaração oficial. O estágio não conclui IBS/CBS e mantém `uc004_planning_authorized=false`.
 
 Se o PGDAS-D indicar regime de apuração `CAIXA`, o resultado apresenta um aviso
@@ -139,6 +145,12 @@ Para o PGDAS-D, o lote procura somente em `SN\<nome-da-pasta>` ou
 `SN\<competência AAAA-MM>` dentro da raiz indicada.
 
 O estado fica localmente em `.reforma-tributaria/`, protegido pelo `.gitignore`. Um manifesto registra hashes das entradas e regras usadas em cada competência: períodos só são reaproveitados quando o conteúdo não mudou e os artefatos possuem schemas e IDs coerentes. Conteúdo alterado, saída corrompida ou `force` explícito provoca reprocessamento; uma falha continua isolada dos demais períodos. Pastas que contêm apenas declarações do Simples são fontes de conciliação, não competências fiscais independentes. Ao final, a fila central de revisão é atualizada uma única vez.
+
+Quando houver dois ou mais estabelecimentos processados na mesma competência e
+uma única pasta PGDAS-D correspondente, o lote também grava a conciliação
+consolidada em `.reforma-tributaria/conciliacoes-simples-grupo/<competência>/`.
+Essa saída é derivada da raiz indicada e confirma a cobertura pelos documentos e
+pelos estabelecimentos declarados, sem exigir manifesto manual.
 
 ## Verificação local
 

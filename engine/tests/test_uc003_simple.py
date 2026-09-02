@@ -13,7 +13,9 @@ from fiscal_document_intake.cli import main
 from fiscal_document_intake.core import ValidationError
 from fiscal_document_intake.revenue import REVENUE_SCHEMA_VERSION
 from fiscal_document_intake.simple_reconciliation import (
+    discover_group_period_folders,
     reconcile_simple_revenue,
+    reconcile_simple_revenue_group,
     write_simple_reconciliation_outputs,
 )
 from reportlab.pdfgen import canvas
@@ -39,6 +41,7 @@ def write_revenue_summary(
     goods: str = "100.00",
     services: str = "200.00",
     status: str = "REVENUE_REVIEW_READY",
+    establishment_id: str = MATRIX,
 ) -> None:
     target = folder / "06_REVISAO_RECEITAS"
     target.mkdir(parents=True)
@@ -51,7 +54,7 @@ def write_revenue_summary(
         "status": status,
         "scope": {
             "entity_ref": "EMPRESA-SYNTHETIC",
-            "establishment_ref": establishment_ref(MATRIX),
+            "establishment_ref": establishment_ref(establishment_id),
             "period": period,
         },
         "totals": {
@@ -163,6 +166,36 @@ def test_uc003c_reconciles_matrix_and_preserves_partial_group_coverage(
         in report
     )
     assert "Receita declarada fora da cobertura documental" not in report
+
+
+def test_uc003c_consolidates_matrix_and_branch_from_one_portfolio_root(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "portfolio"
+    matrix_folder = root / "MATRIZ" / "01-2026"
+    branch_folder = root / "FILIAL" / "01-2026"
+    pgdas = root / "SN" / "01-2026"
+    write_revenue_summary(matrix_folder, establishment_id=MATRIX)
+    write_revenue_summary(
+        branch_folder,
+        goods="50.00",
+        services="0.00",
+        establishment_id=BRANCH,
+    )
+    write_pgdas_declaration(pgdas, branch_goods="50,00")
+
+    assert discover_group_period_folders(root, "2026-01") == sorted(
+        [matrix_folder, branch_folder], key=lambda item: item.as_posix().casefold()
+    )
+    result = reconcile_simple_revenue_group([matrix_folder, branch_folder], pgdas)
+
+    assert result["phase"] == "SIMPLE_REVENUE_GROUP_RECONCILIATION"
+    assert result["status"] == "SIMPLE_REVENUE_RECONCILED"
+    assert result["scope"]["documentary_establishments"] == 2
+    assert result["scope"]["pgdas_establishments"] == 2
+    assert result["gates"]["group_coverage_complete"] is True
+    assert result["gates"]["documentary_scope_reconciled"] is True
+    assert result["totals"]["matched_difference"] == "0.00"
 
 
 def test_uc003c_reads_month_from_period_start_date(tmp_path: Path) -> None:

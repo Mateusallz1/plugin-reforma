@@ -19,9 +19,12 @@ from .revenue import REVENUE_SCHEMA_VERSION
 SIMPLE_RECONCILIATION_SCHEMA = (
     "br.com.planejamento-reforma-tributaria/simple-revenue-reconciliation"
 )
-SIMPLE_RECONCILIATION_SCHEMA_VERSION = "1.1.0"
+SIMPLE_RECONCILIATION_SCHEMA_VERSION = "1.2.0"
 RECONCILED_STATUSES = frozenset({"RECONCILED", "NO_MOVEMENT"})
 MONEY_PATTERN = re.compile(r"\d{1,3}(?:\.\d{3})*,\d{2}")
+PERIOD_FOLDER_PATTERN = re.compile(
+    r"(?:0[1-9]|1[0-2])-20\d{2}|20\d{2}-(?:0[1-9]|1[0-2])"
+)
 
 
 def _normalized_text(value: str) -> str:
@@ -84,6 +87,37 @@ def _load_json(path: Path, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValidationError(f"{label} deve conter um objeto JSON")
     return value
+
+
+def discover_group_period_folders(
+    portfolio_root: Path | str, period: str
+) -> list[Path]:
+    """Find establishment period folders already processed under one root."""
+
+    root = Path(portfolio_root).expanduser().resolve()
+    if not root.is_dir():
+        raise ValidationError("A pasta da carteira informada não existe")
+    if re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", period) is None:
+        raise ValidationError("A competência deve estar no formato AAAA-MM")
+    folders: set[Path] = set()
+    for summary_path in root.rglob("revenue-summary.json"):
+        folder = summary_path.parent.parent
+        if not PERIOD_FOLDER_PATTERN.fullmatch(folder.name):
+            continue
+        normalized_period = (
+            f"{folder.name[3:]}-{folder.name[:2]}"
+            if re.fullmatch(r"(?:0[1-9]|1[0-2])-20\d{2}", folder.name)
+            else folder.name
+        )
+        if normalized_period != period:
+            continue
+        if any(
+            part in {"SN", ".reforma-tributaria"}
+            for part in folder.relative_to(root).parts
+        ):
+            continue
+        folders.add(folder)
+    return sorted(folders, key=lambda item: item.as_posix().casefold())
 
 
 def _read_pdf(path: Path) -> tuple[str, int]:
@@ -492,9 +526,240 @@ def reconcile_simple_revenue(
     }
 
 
+def reconcile_simple_revenue_group(
+    folders: list[Path | str], pgdas_folder: Path | str
+) -> dict[str, Any]:
+    """Reconcile all explicitly discovered establishments in one PGDAS-D group."""
+
+    bases = sorted({Path(folder).expanduser().resolve() for folder in folders})
+    if len(bases) < 2:
+        raise ValidationError(
+            "A consolidação de grupo exige pelo menos dois estabelecimentos"
+        )
+    summaries: list[dict[str, Any]] = []
+    for base in bases:
+        if not base.is_dir():
+            raise ValidationError("Uma pasta de estabelecimento do grupo não existe")
+        summary = _load_json(
+            base / "06_REVISAO_RECEITAS" / "revenue-summary.json",
+            "06_REVISAO_RECEITAS/revenue-summary.json",
+        )
+        if (
+            summary.get("use_case") != "UC-003"
+            or summary.get("phase") != "REVENUE_REVIEW"
+            or summary.get("schema_version") != REVENUE_SCHEMA_VERSION
+        ):
+            raise ValidationError(
+                "A consolidação exige revisões de receitas na versão vigente"
+            )
+        if not summary.get("gates", {}).get("revenue_population_ready"):
+            raise ValidationError(
+                "A consolidação exige população de receitas pronta em todos os estabelecimentos"
+            )
+        summaries.append(summary)
+
+    entity_refs = {summary.get("scope", {}).get("entity_ref") for summary in summaries}
+    periods = {summary.get("scope", {}).get("period") for summary in summaries}
+    establishment_refs = [
+        summary.get("scope", {}).get("establishment_ref") for summary in summaries
+    ]
+    if None in entity_refs or len(entity_refs) != 1:
+        raise ValidationError("As pastas do grupo não comprovam a mesma empresa")
+    if None in periods or len(periods) != 1:
+        raise ValidationError("As pastas do grupo devem ter a mesma competência")
+    if any(not reference for reference in establishment_refs) or len(
+        set(establishment_refs)
+    ) != len(establishment_refs):
+        raise ValidationError(
+            "As pastas do grupo devem representar estabelecimentos distintos"
+        )
+
+    pgdas_path = Path(pgdas_folder).expanduser().resolve()
+    declaration_path, declaration_text, source_lock = _load_pgdas_sources(pgdas_path)
+    declaration = _parse_declaration(declaration_text, _source_ref(declaration_path))
+    period = next(iter(periods))
+    if period != declaration["period"]:
+        raise ValidationError("Competência do PGDAS-D diverge das revisões de receitas")
+
+    documentary_by_ref = {
+        summary["scope"]["establishment_ref"]: _documentary_activities(summary)
+        for summary in summaries
+    }
+    declared_refs = {
+        establishment["establishment_ref"]
+        for establishment in declaration["establishments"]
+    }
+    documentary_refs = set(documentary_by_ref)
+    unexpected_refs = documentary_refs - declared_refs
+    if unexpected_refs:
+        raise ValidationError(
+            "Um estabelecimento documental do grupo não foi localizado no PGDAS-D"
+        )
+
+    records: list[dict[str, Any]] = []
+    for establishment in declaration["establishments"]:
+        establishment_ref = establishment["establishment_ref"]
+        declared_activities = establishment["activities"]
+        documentary_activities = documentary_by_ref.get(establishment_ref)
+        activities = set(declared_activities)
+        if documentary_activities is not None:
+            activities.update(documentary_activities)
+        for activity in sorted(activities):
+            declared = _decimal(declared_activities.get(activity))
+            documentary = (
+                _decimal(documentary_activities.get(activity))
+                if documentary_activities is not None
+                else None
+            )
+            records.append(
+                {
+                    "establishment_ref": establishment_ref,
+                    "activity": activity,
+                    "declared_amount": _money(declared),
+                    "documentary_amount": (
+                        _money(documentary) if documentary is not None else None
+                    ),
+                    "difference": _money(
+                        declared - documentary if documentary is not None else declared
+                    ),
+                    "status": _status(declared, documentary),
+                }
+            )
+
+    covered_records = [
+        record for record in records if record["establishment_ref"] in documentary_refs
+    ]
+    documentary_scope_reconciled = all(
+        record["status"] in RECONCILED_STATUSES for record in covered_records
+    )
+    group_coverage_complete = declared_refs == documentary_refs
+    analyst_review_required = (
+        not documentary_scope_reconciled or not group_coverage_complete
+    )
+    declared_matched = sum(
+        (_decimal(record["declared_amount"]) for record in covered_records),
+        Decimal(0),
+    )
+    documentary_total = sum(
+        (
+            _decimal(value)
+            for activities in documentary_by_ref.values()
+            for value in activities.values()
+        ),
+        Decimal(0),
+    )
+    uncovered_total = sum(
+        (
+            _decimal(establishment["declared_total"])
+            for establishment in declaration["establishments"]
+            if establishment["establishment_ref"] not in documentary_refs
+        ),
+        Decimal(0),
+    )
+    missing_establishments = sorted(declared_refs - documentary_refs)
+    material = {
+        "revenue_review_ids": sorted(
+            summary["review_id"] for summary in summaries if summary.get("review_id")
+        ),
+        "declaration_hash": _sha256(declaration_path),
+        "period": period,
+        "schema_version": SIMPLE_RECONCILIATION_SCHEMA_VERSION,
+    }
+    reconciliation_id = (
+        "SNG-"
+        + hashlib.sha256(
+            json.dumps(material, sort_keys=True, separators=(",", ":")).encode()
+        )
+        .hexdigest()[:16]
+        .upper()
+    )
+    status = (
+        "SIMPLE_REVENUE_RECONCILED"
+        if documentary_scope_reconciled and group_coverage_complete
+        else "SIMPLE_REVENUE_PARTIAL_COVERAGE"
+        if documentary_scope_reconciled and not group_coverage_complete
+        else "SIMPLE_REVENUE_REVIEW_REQUIRED"
+    )
+    warnings = [
+        {"code": "ESTABLISHMENT_DOCUMENTS_MISSING", "ref": reference}
+        for reference in missing_establishments
+    ]
+    warnings.extend(
+        {"code": record["status"], "ref": record["establishment_ref"]}
+        for record in covered_records
+        if record["status"] not in RECONCILED_STATUSES
+    )
+    if declaration["revenue_regime"] == "CAIXA":
+        warnings.append(
+            {
+                "code": "REVENUE_REGIME_CAIXA",
+                "ref": "PGDAS_DECLARATION",
+                "severity": "WARNING",
+            }
+        )
+    return {
+        "schema": SIMPLE_RECONCILIATION_SCHEMA,
+        "schema_version": SIMPLE_RECONCILIATION_SCHEMA_VERSION,
+        "use_case": "UC-003C",
+        "phase": "SIMPLE_REVENUE_GROUP_RECONCILIATION",
+        "reconciliation_id": reconciliation_id,
+        "revenue_review_ids": material["revenue_review_ids"],
+        "status": status,
+        "scope": {
+            "mode": "GROUP",
+            "entity_ref": next(iter(entity_refs)),
+            "documentary_establishment_ref": "GROUP",
+            "period": period,
+            "revenue_regime": declaration["revenue_regime"],
+            "pgdas_establishments": len(declaration["establishments"]),
+            "documentary_establishments": len(documentary_refs),
+        },
+        "pgdas": {
+            key: value for key, value in declaration.items() if key != "establishments"
+        },
+        "coverage": {
+            "covered_establishment_refs": sorted(documentary_refs),
+            "missing_establishment_refs": missing_establishments,
+        },
+        "totals": {
+            "pgdas_group_declared": declaration["declared_total"],
+            "pgdas_matched_establishment": _money(declared_matched),
+            "documentary_matched_establishment": _money(documentary_total),
+            "matched_difference": _money(declared_matched - documentary_total),
+            "uncovered_pgdas_revenue": _money(uncovered_total),
+        },
+        "status_counts": dict(
+            sorted(
+                {
+                    value: sum(record["status"] == value for record in records)
+                    for value in {record["status"] for record in records}
+                }.items()
+            )
+        ),
+        "source_lock": source_lock,
+        "warnings": warnings,
+        "gates": {
+            "simple_reconciliation_execution_ready": True,
+            "documentary_scope_reconciled": documentary_scope_reconciled,
+            "group_coverage_complete": group_coverage_complete,
+            "analyst_review_required": analyst_review_required,
+            "non_issuance_confirmed": False,
+            "uc004_planning_authorized": False,
+        },
+        "limitations": [
+            "A consolidação usa somente as pastas de estabelecimentos explicitamente descobertas na raiz indicada.",
+            "Ausência de documento na base fornecida não comprova não emissão.",
+            "A conciliação usa a receita declarada no PGDAS-D e não conclui tratamento de IBS/CBS.",
+            "No regime CAIXA, a comparação documental exige análise temporal específica; o aviso não bloqueia a conciliação.",
+        ],
+        "_private_records": records,
+    }
+
+
 def _report(result: dict[str, Any]) -> str:
     totals = result["totals"]
     gates = result["gates"]
+    is_group = result.get("scope", {}).get("mode") == "GROUP"
     lines = [
         "# Relatório de Conciliação do Simples Nacional",
         "",
@@ -502,14 +767,30 @@ def _report(result: dict[str, Any]) -> str:
         f"- Situação: `{result['status']}`",
         f"- Competência: `{result['scope']['period']}`",
         f"- Regime de apuração: `{result['scope']['revenue_regime']}`",
-        f"- Estabelecimento documental: `{result['scope']['documentary_establishment_ref']}`",
+        (
+            f"- Estabelecimentos documentais: {result['scope']['documentary_establishments']}"
+            if is_group
+            else f"- Estabelecimento documental: `{result['scope']['documentary_establishment_ref']}`"
+        ),
         "",
         "## Totais",
         "",
         f"- Receita declarada do grupo: R$ {totals['pgdas_group_declared']}",
-        f"- Receita declarada do estabelecimento conciliado: R$ {totals['pgdas_matched_establishment']}",
-        f"- Receita documental do estabelecimento: R$ {totals['documentary_matched_establishment']}",
-        f"- Diferença no estabelecimento conciliado: R$ {totals['matched_difference']}",
+        (
+            f"- Receita declarada dos estabelecimentos cobertos: R$ {totals['pgdas_matched_establishment']}"
+            if is_group
+            else f"- Receita declarada do estabelecimento conciliado: R$ {totals['pgdas_matched_establishment']}"
+        ),
+        (
+            f"- Receita documental dos estabelecimentos: R$ {totals['documentary_matched_establishment']}"
+            if is_group
+            else f"- Receita documental do estabelecimento: R$ {totals['documentary_matched_establishment']}"
+        ),
+        (
+            f"- Diferença nos estabelecimentos cobertos: R$ {totals['matched_difference']}"
+            if is_group
+            else f"- Diferença no estabelecimento conciliado: R$ {totals['matched_difference']}"
+        ),
         f"- Receita PGDAS-D declarada por estabelecimento fora do escopo documental analisado: R$ {totals['uncovered_pgdas_revenue']}",
         "",
         "## Cobertura",

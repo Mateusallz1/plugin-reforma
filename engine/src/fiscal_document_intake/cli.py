@@ -17,7 +17,9 @@ from .portfolio_review import (
 )
 from .revenue import review_revenue_folder, write_revenue_outputs
 from .simple_reconciliation import (
+    discover_group_period_folders,
     reconcile_simple_revenue,
+    reconcile_simple_revenue_group,
     write_simple_reconciliation_outputs,
 )
 
@@ -58,6 +60,14 @@ def build_parser() -> argparse.ArgumentParser:
     simple_reconciliation.add_argument("folder", type=Path)
     simple_reconciliation.add_argument("--pgdas-folder", type=Path, required=True)
     simple_reconciliation.add_argument("--output-dir", type=Path)
+    simple_group = subparsers.add_parser(
+        "reconcile-simple-group",
+        help="Consolidar receitas de matriz e filiais com o PGDAS-D",
+    )
+    simple_group.add_argument("folder", type=Path)
+    simple_group.add_argument("--period", required=True)
+    simple_group.add_argument("--pgdas-folder", type=Path, required=True)
+    simple_group.add_argument("--output-dir", type=Path)
     planning_status = subparsers.add_parser(
         "planning-status",
         help="Identificar o estágio atual e a próxima ação útil do planejamento",
@@ -195,6 +205,31 @@ def main(argv: list[str] | None = None) -> int:
                 "uc004_planning_authorized": result["gates"][
                     "uc004_planning_authorized"
                 ],
+                "outputs": [path.name for path in written],
+            }
+        elif args.command == "reconcile-simple-group":
+            group_folders = discover_group_period_folders(args.folder, args.period)
+            result = reconcile_simple_revenue_group(group_folders, args.pgdas_folder)
+            output_dir = args.output_dir or (
+                args.folder
+                / ".reforma-tributaria"
+                / "conciliacoes-simples-grupo"
+                / args.period
+            )
+            written = write_simple_reconciliation_outputs(result, output_dir)
+            ready = (
+                result["gates"]["group_coverage_complete"]
+                and result["gates"]["documentary_scope_reconciled"]
+            )
+            response = {
+                "status": result["status"],
+                "reconciliation_id": result["reconciliation_id"],
+                "period": result["scope"]["period"],
+                "documentary_establishments": result["scope"][
+                    "documentary_establishments"
+                ],
+                "pgdas_establishments": result["scope"]["pgdas_establishments"],
+                "group_coverage_complete": result["gates"]["group_coverage_complete"],
                 "outputs": [path.name for path in written],
             }
         elif args.command == "planning-status":
