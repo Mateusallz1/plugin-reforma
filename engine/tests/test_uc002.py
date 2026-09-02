@@ -84,6 +84,12 @@ def test_uc002_extracts_deterministically_and_preserves_privacy(
         "SERVICE": 1,
         "TRANSPORT": 1,
     }
+    product = next(
+        record
+        for record in first["_private_records"]
+        if record["record_kind"] == "PRODUCT"
+    )
+    assert product["nature_operation"] == "VENDA"
     assert first["analysis_group_counts"] == {
         "CTE_TOMADOS": 1,
         "NFE_SAIDAS": 1,

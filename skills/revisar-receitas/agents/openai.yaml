@@ -3,4 +3,4 @@ interface:
   short_description: "Classifica vendas, devoluções e remessas"
   default_prompt: "Use $revisar-receitas para revisar receita documental por direção e CFOP, usando a tabela oficial vigente e o checklist do analista."
 policy:
-  allow_implicit_invocation: true
+  allow_implicit_invocation: false

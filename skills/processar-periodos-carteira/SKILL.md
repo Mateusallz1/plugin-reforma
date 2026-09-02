@@ -17,6 +17,18 @@ Esta skill executa o fluxo documental e operacional em lote. Cada competência c
 
 4. Informe quantas competências fiscais foram encontradas. Pastas do Simples são fontes de conciliação e não contam como competências fiscais independentes.
 
+### Nomenclatura obrigatória
+
+Cada pasta de competência que contenha XML deve usar exatamente `MM-AAAA` ou
+`AAAA-MM` (por exemplo, `01-2026` ou `2026-01`). Formatos como `01.2026`,
+`Janeiro-2026` ou nomes de mês por extenso não são reconhecidos. O lote informa
+quantas pastas com XML foram ignoradas por nomenclatura inválida; se nenhuma
+competência válida restar, a execução termina pedindo a renomeação.
+
+Para procurar PGDAS-D, o lote considera somente `<raiz>\SN\<nome-da-pasta>` ou
+`<raiz>\SN\<competência AAAA-MM>`. Uma pasta do Simples sem XML não é uma
+competência fiscal do lote.
+
 ## Processamento
 
 Antes da primeira execução da rodada, confirme uma única vez que os snapshots oficiais usados pelas skills de aquisições e receitas continuam vigentes. Não repita essa consulta por competência e não atualize snapshots silenciosamente.

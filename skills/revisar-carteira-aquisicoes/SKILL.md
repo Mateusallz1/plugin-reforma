@@ -46,6 +46,6 @@ Gere CSV apenas quando solicitado:
 
 - Não classifique a finalidade econômica sem decisão humana.
 - Não escolha `PORTFOLIO` por padrão; o alcance deve ser explícito.
-- Mudança em descrição, código, NCM, CFOP ou demais campos da assinatura cria outro grupo.
+- Mudança em descrição, código, NCM, CFOP, `natOp` ou demais campos da assinatura cria outro grupo.
 - Não exponha caminhos empresariais, CNPJ, chaves fiscais ou descrições desnecessárias na resposta normal.
 - Aprovação operacional não conclui direito a crédito, incidência ou conformidade tributária.

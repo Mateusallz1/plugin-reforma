@@ -73,6 +73,7 @@ def write_pgdas_declaration(
     matrix_goods: str = "100,00",
     matrix_services: str = "200,00",
     branch_goods: str | None = "50,00",
+    revenue_regime: str = "Competencia",
 ) -> Path:
     folder.mkdir(parents=True)
     path = folder / "PGDASD-DECLARACAO-SINTETICA.pdf"
@@ -89,7 +90,7 @@ def write_pgdas_declaration(
         "Declaracao Original",
         f"Periodo de Apuracao: 01/{period} a 31/{period}",
         f"CNPJ Matriz: {formatted_cnpj(MATRIX)}",
-        "Regime de Apuracao: Competencia",
+        f"Regime de Apuracao: {revenue_regime}",
         "No da Declaracao: 12345678901234567",
         f"Receita Bruta do PA (RPA) - Competencia {declared_total} 0,00 {declared_total}",
         "2.7) Informacoes da Declaracao por Estabelecimento",
@@ -173,6 +174,26 @@ def test_uc003c_reads_month_from_period_start_date(tmp_path: Path) -> None:
     result = reconcile_simple_revenue(folder, pgdas)
 
     assert result["scope"]["period"] == "2026-02"
+
+
+def test_uc003c_warns_on_cash_regime_without_blocking(tmp_path: Path) -> None:
+    folder = tmp_path / "company-cash"
+    pgdas = tmp_path / "pgdas-cash"
+    write_revenue_summary(folder)
+    write_pgdas_declaration(pgdas, branch_goods=None, revenue_regime="Caixa")
+
+    result = reconcile_simple_revenue(folder, pgdas)
+
+    assert result["scope"]["revenue_regime"] == "CAIXA"
+    assert {warning["code"] for warning in result["warnings"]} == {
+        "REVENUE_REGIME_CAIXA"
+    }
+    assert result["gates"]["simple_reconciliation_execution_ready"] is True
+    assert result["gates"]["documentary_scope_reconciled"] is True
+    report = write_simple_reconciliation_outputs(
+        result, folder / "07_CONCILIACAO_SIMPLES"
+    )[4].read_text(encoding="utf-8")
+    assert "regime CAIXA exige análise temporal específica" in report
 
 
 def test_uc003c_marks_declared_revenue_without_document_support(

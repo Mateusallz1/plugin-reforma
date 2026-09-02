@@ -71,8 +71,21 @@ def write_acquisition(folder: Path, *, analyst_review: bool = True) -> None:
                 "document_count": 1,
                 "pending_document_count": 0,
             },
-            "excluded_operation_counts": {
-                "NON_REVENUE_REMITTANCE": {"document_count": 1, "item_count": 2}
+            "excluded_operation_summary": {
+                "document_count": 1,
+                "item_count": 2,
+                "document_total": "50.00",
+                "by_reason": {
+                    "NON_REVENUE_REMITTANCE": {
+                        "reason_document_count": 1,
+                        "item_count": 2,
+                        "document_total": "50.00",
+                    }
+                },
+                "mixed_reason_documents": {
+                    "document_count": 0,
+                    "document_total": "0.00",
+                },
             },
             "gates": {
                 "uc003_execution_ready": True,
@@ -418,9 +431,12 @@ def test_status_shows_purchase_sales_comparison_without_new_gate(
     assert comparison["gross_documentary_purchases"] == "125.00"
     assert comparison["gross_operational_revenue"] == "875.00"
     assert comparison["purchase_to_revenue_ratio"] == "0.1429"
-    assert result["documentary_summary"]["acquisitions"][
-        "excluded_operation_counts"
-    ] == {"NON_REVENUE_REMITTANCE": {"document_count": 1, "item_count": 2}}
+    assert (
+        result["documentary_summary"]["acquisitions"]["excluded_operation_summary"][
+            "document_total"
+        ]
+        == "50.00"
+    )
     assert result["status"] == "NEEDS_USER_INPUT"
 
     report = write_planning_status_outputs(result, folder / "08_STATUS_PLANEJAMENTO")[
@@ -429,6 +445,7 @@ def test_status_shows_purchase_sales_comparison_without_new_gate(
     assert "### Compras documentais × vendas documentais" in report
     assert "| Relação compras/receita | 0.1429 |" in report
     assert "NON_REVENUE_REMITTANCE" in report
+    assert "Valor total dos documentos de entrada fora de compras: 50.00" in report
 
 
 @pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="Windows launcher")

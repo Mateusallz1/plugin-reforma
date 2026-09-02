@@ -470,6 +470,15 @@ def test_uc003b_rejects_legacy_content_schema(tmp_path: Path) -> None:
         review_revenue_folder(folder, CFOP_SNAPSHOT, ANALYST_RULES)
 
 
+def test_uc003b_rejects_tampered_cfop_snapshot(tmp_path: Path) -> None:
+    folder = make_revenue_case(tmp_path)
+    tampered_snapshot = tmp_path / CFOP_SNAPSHOT.name
+    tampered_snapshot.write_bytes(CFOP_SNAPSHOT.read_bytes() + b"\n")
+
+    with pytest.raises(ValidationError, match="Hash do snapshot oficial de CFOP"):
+        review_revenue_folder(folder, tampered_snapshot, ANALYST_RULES)
+
+
 def test_uc003b_keeps_residue_when_component_does_not_close(tmp_path: Path) -> None:
     """Componente parcial não fecha a diferença: o resíduo mantém o bloqueio."""
     folder = _nfe_com_composicao(

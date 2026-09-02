@@ -36,6 +36,7 @@ A conversa anterior e a memória da outra máquina não são necessárias: o con
 - `scripts/invoke-engine.ps1`: bootstrap único do ambiente e do executável usado pelos launchers das skills. Por padrão, o ambiente versionado fica no `LocalApplicationData` do usuário; `FISCAL_INTAKE_ENVIRONMENT` permite apontar outro local controlado.
 - `skills/validar-base-documental/references/`: políticas de validade, CT-e, NFS-e, grupos e autorizações por escopo.
 - `skills/uv/`: orientação vendorizada da Astral para manutenção do motor.
+- Somente `planejar-reforma-tributaria` é roteada implicitamente; skills operacionais e `uv` devem ser invocadas explicitamente.
 - `03_SAIDAS/` e demais dados de clientes: ficam fora deste repositório.
 - `legacy/mcp/`: bundle Node/MCP arquivado; não faz parte do runtime ativo.
 
@@ -56,7 +57,7 @@ Relatórios CSV/XLSX usam a política `COMPLEMENTARY`: conciliam população, si
 
 O UC-002 normaliza somente documentos liberados pelo UC-001:
 
-- NF-e/NFC-e: uma linha por produto, com NCM, CFOP, quantidades, valores e campos tributários disponíveis;
+- NF-e/NFC-e: uma linha por produto, com NCM, CFOP, `natOp` do documento, quantidades, valores e campos tributários disponíveis;
 - NFS-e: uma linha por serviço, com item da lista, CNAE informado, NBS, valores e ISS disponível;
 - CT-e: uma linha por prestação, com CFOP, natureza, modal, produto predominante, componentes e referências.
 
@@ -82,15 +83,20 @@ O relatório detalhado permanece local em `.reforma-tributaria/fila-revisao-cart
 
 O par CST/cClassTrib declarado é validado contra snapshot versionado da tabela oficial. Antes de cada execução da skill, a versão publicada deve ser conferida no Portal NF-e. Atualização oficial exige novo snapshot, testes e versão do plugin; uma análise nunca muda silenciosamente de ruleset.
 
+Além do registro no `ruleset-lock`, o motor compara cada snapshot e ruleset com
+um hash confiável embarcado. Alterações locais ou arquivos não reconhecidos
+interrompem a execução até que a atualização seja revisada e versionada.
+
 As saídas ficam em `05_REVISAO_AQUISICOES/`. O UC-003 inicial não determina direito a crédito e mantém `uc004_planning_authorized=false`.
 
 O resumo também publica `documentary_totals`: cada documento de entrada é
 contado uma única vez pelo seu total declarado, com subtotais por tipo e grupo,
 devoluções e operações que não representam compra. Documentos mistos ficam em
 tratamento pendente; compras sem crédito continuam no total documental.
-As operações excluídas também são demonstradas por motivo CFOP, com contagem de
-documentos e itens, sem ratear valores quando um documento tiver mais de uma
-operação.
+As operações excluídas também são demonstradas em `excluded_operation_summary`:
+o valor total dos documentos aparece uma única vez e o bloco `by_reason` mostra
+documentos, itens e valores por motivo CFOP quando o motivo é único. Documentos
+com mais de um motivo ficam separados em `mixed_reason_documents`, sem rateio.
 
 ## Revisão das receitas
 
@@ -114,6 +120,9 @@ O UC-003C recebe uma pasta de PDFs do PGDAS-D explicitamente indicada e usa a de
 
 As saídas ficam em `07_CONCILIACAO_SIMPLES/`. Cobertura parcial gera fila para o analista sem presumir não emissão. Recibo e extrato são evidências complementares, DAS não comprova pagamento e memória do sistema contábil não substitui a declaração oficial. O estágio não conclui IBS/CBS e mantém `uc004_planning_authorized=false`.
 
+Se o PGDAS-D indicar regime de apuração `CAIXA`, o resultado apresenta um aviso
+não bloqueante e encaminha a análise temporal para o analista.
+
 ## Experiência do usuário
 
 Use `planejar-reforma-tributaria` para iniciar ou retomar. O coordenador grava `08_STATUS_PLANEJAMENTO/`, detecta artefatos já existentes e executa as próximas etapas seguras sem exigir que o usuário conheça UCs, launchers, códigos de saída ou gates.
@@ -123,6 +132,11 @@ Quando depender de uma decisão humana, a resposta informa em linguagem comum: s
 ## Processamento de vários períodos
 
 Use `processar-periodos-carteira` quando a pasta indicada contiver várias competências. O lote descobre as pastas com documentos fiscais, mantém estabelecimento e competência separados e processa até dois períodos simultaneamente por padrão.
+
+As pastas de competência devem estar nomeadas como `MM-AAAA` ou `AAAA-MM`.
+Nomes como `01.2026` e `Janeiro-2026` são rejeitados com diagnóstico explícito.
+Para o PGDAS-D, o lote procura somente em `SN\<nome-da-pasta>` ou
+`SN\<competência AAAA-MM>` dentro da raiz indicada.
 
 O estado fica localmente em `.reforma-tributaria/`, protegido pelo `.gitignore`. Um manifesto registra hashes das entradas e regras usadas em cada competência: períodos só são reaproveitados quando o conteúdo não mudou e os artefatos possuem schemas e IDs coerentes. Conteúdo alterado, saída corrompida ou `force` explícito provoca reprocessamento; uma falha continua isolada dos demais períodos. Pastas que contêm apenas declarações do Simples são fontes de conciliação, não competências fiscais independentes. Ao final, a fila central de revisão é atualizada uma única vez.
 

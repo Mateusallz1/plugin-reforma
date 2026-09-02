@@ -3,4 +3,4 @@ interface:
   short_description: "Normaliza conteúdo e valida Produto × NCM"
   default_prompt: "Use $extrair-conteudo-fiscal para extrair o conteúdo autorizado, registrar observações e separar itens restritos antes do UC-003."
 policy:
-  allow_implicit_invocation: true
+  allow_implicit_invocation: false

@@ -134,7 +134,18 @@ não misturar mudança de nome e de cálculo. Adicionar ao `acquisition-summary.
     "by_analysis_group": {},
     "cross_document_linkage": "NOT_PERFORMED"
   },
-  "excluded_operation_counts": {}
+  "excluded_operation_summary": {
+    "amount_basis": "UNIQUE_DOCUMENT_TOTAL",
+    "document_count": 0,
+    "item_count": 0,
+    "document_total": "0.00",
+    "by_reason": {},
+    "mixed_reason_documents": {
+      "document_count": 0,
+      "document_total": "0.00"
+    },
+    "reason_document_counts_may_overlap": true
+  }
 }
 ```
 
@@ -164,7 +175,8 @@ Não criar `credit_eligible_amount` nesta entrega.
 
 ## Contrato entregue — devoluções e comparação
 
-`REVENUE_SCHEMA_VERSION` entregue em `1.3.0`, com o campo adicional em `totals`:
+`REVENUE_SCHEMA_VERSION` foi entregue inicialmente em `1.3.0` e está em `1.4.0`
+na baseline atual, com o campo adicional em `totals`:
 
 ```json
 {
@@ -172,7 +184,8 @@ Não criar `credit_eligible_amount` nesta entrega.
 }
 ```
 
-`PLANNING_STATUS_SCHEMA_VERSION` entregue em `1.3.0`. Quando aquisições e receitas
+`PLANNING_STATUS_SCHEMA_VERSION` foi entregue inicialmente em `1.3.0` e está em
+`1.5.0` na baseline atual. Quando aquisições e receitas
 estiverem disponíveis e coerentes, adicionar ao `documentary_summary`:
 
 ```json
@@ -210,7 +223,8 @@ gate na conversa comum.
 
 ## Contrato entregue — triagem NCM × descrição
 
-`CONTENT_SCHEMA_VERSION` entregue em `1.3.0`, com os novos campos por produto:
+`CONTENT_SCHEMA_VERSION` foi entregue inicialmente em `1.3.0` e está em `1.4.0`
+na baseline atual, com os novos campos por produto:
 
 ```json
 {
@@ -296,27 +310,34 @@ e evidência preenchidos produzem estado confirmado.
 
 Esta entrega não deve reescrever XML, NCM informado ou catálogo existente.
 
+O `natOp` de NF-e/NFC-e é copiado do nível documental para os registros de
+produto e passou a participar da assinatura determinística da fila de
+aquisições. A mudança apenas preserva evidência; não transforma `natOp` em
+classificação fiscal.
+
 ## Correção de transparência das entradas excluídas
 
 Após a implementação do plano, o UC-003 passou a publicar
-`excluded_operation_counts` por motivo CFOP. A população detalhada continua
-restrita à pasta local, mas o resumo e o relatório mostram quantos documentos e
-itens foram excluídos por devolução de venda, remessa, retorno ou anulação. O
-total monetário continua agregado em `non_purchase_entry_operations`, sem
-rateio automático entre motivos. Essa correção elevou o contrato de aquisições
-para `1.3.0`, o status de planejamento para `1.4.0` e o lote para `1.4.0`.
+`excluded_operation_summary` por motivo CFOP. A população detalhada continua
+restrita à pasta local, mas o resumo e o relatório mostram o valor dos
+documentos distintos e quantos documentos e itens foram excluídos por devolução
+de venda, remessa, retorno ou anulação. O total monetário é contado uma vez e
+não é rateado entre motivos. Essa correção elevou o contrato de aquisições
+para `1.5.0`, o status de planejamento para `1.6.0` e o lote para `1.6.0`.
 
 ## Migração e coerência
 
 Ao implementar os contratos:
 
-- `CONTENT_SCHEMA_VERSION`: `1.3.0`;
-- `ACQUISITION_SCHEMA_VERSION`: `1.3.0`;
-- `REVENUE_SCHEMA_VERSION`: `1.3.0`;
-- `PLANNING_STATUS_SCHEMA_VERSION`: `1.4.0`;
-- `BATCH_SCHEMA_VERSION`: `1.4.0`.
+- `CONTENT_SCHEMA_VERSION`: `1.4.0`;
+- `ACQUISITION_SCHEMA_VERSION`: `1.5.0`;
+- `REVENUE_SCHEMA_VERSION`: `1.4.0`;
+- `PLANNING_STATUS_SCHEMA_VERSION`: `1.6.0`;
+- `BATCH_SCHEMA_VERSION`: `1.6.0`.
 
-Atualizar `_outputs_coherent`, os checks do coordenador e os IDs materiais. Saídas
+Atualizar `_outputs_coherent`, os checks do coordenador e os IDs materiais. Os
+loaders também conferem cada hash com o digest confiável embarcado; uma alteração
+local resulta em `ValidationError` até a atualização explícita do plugin. Saídas
 anteriores devem ser reprocessadas; não criar migração silenciosa de JSON.
 
 ## Arquivos previstos

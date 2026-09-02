@@ -37,12 +37,13 @@ from .revenue import (
     review_revenue_folder,
     write_revenue_outputs,
 )
+from .ruleset_integrity import verify_trusted_hash
 from .simple_reconciliation import (
     reconcile_simple_revenue,
     write_simple_reconciliation_outputs,
 )
 
-BATCH_SCHEMA_VERSION = "1.4.0"
+BATCH_SCHEMA_VERSION = "1.6.0"
 STATE_FOLDER = ".reforma-tributaria"
 MANIFEST_FILE = "processamento-lote-manifest.json"
 CONFIG_FILE = "configuracao-lote.local.json"
@@ -123,6 +124,35 @@ def discover_periods(portfolio_root: Path | str) -> list[dict[str, Any]]:
             }
         )
     return sorted(periods, key=lambda item: (item["establishment_key"], item["period"]))
+
+
+def diagnose_period_discovery(portfolio_root: Path | str) -> dict[str, int]:
+    """Report fiscal-looking folders skipped because their period name is invalid."""
+
+    root = Path(portfolio_root).expanduser().resolve()
+    if not root.is_dir():
+        raise ValidationError("A pasta da carteira informada não existe")
+    invalid_period_name_folders = 0
+    for folder in root.rglob("*"):
+        if not folder.is_dir() or folder.is_symlink():
+            continue
+        if folder.name in OUTPUT_DIRECTORIES or folder.name == "01_XML":
+            continue
+        relative_parts = folder.relative_to(root).parts
+        if any(part in OUTPUT_DIRECTORIES for part in relative_parts):
+            continue
+        if _period_from_name(folder.name) is not None:
+            continue
+        if any(_period_from_name(part) is not None for part in relative_parts[:-1]):
+            continue
+        has_xml_directory = (folder / "01_XML").is_dir()
+        has_direct_xml = any(
+            path.is_file() and path.suffix.casefold() == ".xml"
+            for path in folder.iterdir()
+        )
+        if has_xml_directory or has_direct_xml:
+            invalid_period_name_folders += 1
+    return {"invalid_period_name_folders": invalid_period_name_folders}
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -406,6 +436,7 @@ def _local_report(result: dict[str, Any], path: Path) -> None:
         "# Processamento em lote da carteira",
         "",
         f"- Competências encontradas: {result['periods_found']}",
+        f"- Pastas com nome de competência ignorado: {result.get('ignored_invalid_period_folders', 0)}",
         f"- Processadas: {result['processed']}",
         f"- Reaproveitadas: {result['skipped']}",
         f"- Falhas: {result['failed']}",
@@ -438,7 +469,14 @@ def process_portfolio_periods(
         raise ValidationError("O lote aceita de 1 a 4 trabalhadores")
     root = Path(portfolio_root).expanduser().resolve()
     periods = discover_periods(root)
+    discovery_diagnostics = diagnose_period_discovery(root)
     if not periods:
+        invalid_count = discovery_diagnostics["invalid_period_name_folders"]
+        if invalid_count:
+            raise ValidationError(
+                "Nenhuma competência fiscal foi reconhecida. "
+                f"{invalid_count} pasta(s) com XML usam nome inválido; use MM-AAAA ou AAAA-MM."
+            )
         raise ValidationError("Nenhuma competência fiscal com XML foi encontrada")
     rules = {
         "acquisition": Path(acquisition_ruleset).expanduser().resolve(),
@@ -448,6 +486,10 @@ def process_portfolio_periods(
     if any(not path.is_file() for path in rules.values()):
         raise ValidationError("Um dos arquivos de regras do lote não foi encontrado")
     rule_hashes = {name: _sha256(path) for name, path in rules.items()}
+    rule_integrity = {
+        name: verify_trusted_hash(path, rule_hashes[name], f"ruleset do lote {name}")
+        for name, path in rules.items()
+    }
     state = root / STATE_FOLDER
     manifest_path = state / MANIFEST_FILE
     config_path = state / CONFIG_FILE
@@ -523,9 +565,13 @@ def process_portfolio_periods(
         return {
             "status": "DRY_RUN",
             "periods_found": len(periods),
+            "ignored_invalid_period_folders": discovery_diagnostics[
+                "invalid_period_name_folders"
+            ],
             "pending": len(pending),
             "skipped": len(skipped_results),
             "workers": workers,
+            "rule_integrity": rule_integrity,
             "elapsed_seconds": round(time.perf_counter() - started, 3),
         }
 
@@ -582,6 +628,7 @@ def process_portfolio_periods(
         {
             "schema_version": BATCH_SCHEMA_VERSION,
             "rule_hashes": rule_hashes,
+            "rule_integrity": rule_integrity,
             "periods": manifest_periods,
         },
     )
@@ -614,10 +661,14 @@ def process_portfolio_periods(
     result = {
         "status": "COMPLETED" if not failed else "COMPLETED_WITH_FAILURES",
         "periods_found": len(periods),
+        "ignored_invalid_period_folders": discovery_diagnostics[
+            "invalid_period_name_folders"
+        ],
         "processed": processed,
         "skipped": skipped,
         "failed": failed,
         "workers": workers,
+        "rule_integrity": rule_integrity,
         "elapsed_seconds": round(time.perf_counter() - started, 3),
         "portfolio_review_groups": portfolio["group_count"],
         "periods": public_periods,

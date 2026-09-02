@@ -28,9 +28,10 @@ from .core import (
     _raw_files,
     _safe_relative_files,
 )
+from .ruleset_integrity import verify_trusted_hash
 
 CONTENT_SCHEMA = "br.com.planejamento-reforma-tributaria/fiscal-content"
-CONTENT_SCHEMA_VERSION = "1.3.0"
+CONTENT_SCHEMA_VERSION = "1.4.0"
 PRODUCT_NCM_CATALOG = Path("00_CONTROLE") / "catalogo-produtos-ncm.csv"
 NCM_SNAPSHOT_NAME = "ncm-2026-09-01.json"
 NCM_SOURCE_URL = (
@@ -235,6 +236,9 @@ def _load_ncm_snapshot() -> tuple[dict[str, dict[str, str]], dict[str, Any]]:
             "effective_to": end.isoformat(),
         }
     source_hash = hashlib.sha256(raw).hexdigest()
+    integrity = verify_trusted_hash(
+        Path(NCM_SNAPSHOT_NAME), source_hash, "snapshot oficial da NCM"
+    )
     return catalog, {
         "status": "LOADED",
         "snapshot_id": NCM_SNAPSHOT_NAME.removesuffix(".json"),
@@ -243,6 +247,7 @@ def _load_ncm_snapshot() -> tuple[dict[str, dict[str, str]], dict[str, Any]]:
         "effective_label": payload.get("Data_Ultima_Atualizacao_NCM"),
         "act": payload.get("Ato"),
         "source_hash": source_hash,
+        **integrity,
         "records": len(catalog),
     }
 
@@ -591,6 +596,7 @@ def _product_records(
     records: list[dict[str, Any]] = []
     item_amounts: list[Decimal] = []
     document_total_components = _document_total_components(info)
+    document_nature_operation = _direct_text(_direct_child(info, "ide"), "natOp")
     for index, item in enumerate(items, start=1):
         item_number_raw = item.attrib.get("nItem", "")
         item_number = int(item_number_raw) if item_number_raw.isdigit() else index
@@ -616,6 +622,7 @@ def _product_records(
                 "ncm": _direct_text(product, "NCM"),
                 "cest": _direct_text(product, "CEST"),
                 "cfop": _direct_text(product, "CFOP"),
+                "nature_operation": document_nature_operation,
                 "benefit_code": _direct_text(product, "cBenef"),
                 "unit": _direct_text(product, "uCom"),
                 "quantity": _number(_direct_text(product, "qCom")),

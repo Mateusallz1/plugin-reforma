@@ -15,9 +15,10 @@ from typing import Any
 from .content import CONTENT_SCHEMA_VERSION
 from .core import ValidationError, _format_decimal, _parse_decimal
 from .operation_classification import classify_product_item as _classify_product_item
+from .ruleset_integrity import verify_trusted_hash
 
 REVENUE_SCHEMA = "br.com.planejamento-reforma-tributaria/revenue-review"
-REVENUE_SCHEMA_VERSION = "1.3.0"
+REVENUE_SCHEMA_VERSION = "1.4.0"
 DECISION_FILE = Path("00_CONTROLE") / "classificacao-receitas.csv"
 PENDING_CLASSES = {
     "INVALID_CFOP_PENDING",
@@ -90,7 +91,9 @@ def _load_cfop_snapshot(path: Path) -> tuple[dict[str, Any], str]:
         raise ValidationError("Snapshot CFOP possui schema incompatível")
     if not isinstance(snapshot.get("records"), list) or not snapshot["records"]:
         raise ValidationError("Snapshot CFOP não contém registros")
-    return snapshot, _sha256(path)
+    digest = _sha256(path)
+    verify_trusted_hash(path, digest, "snapshot oficial de CFOP")
+    return snapshot, digest
 
 
 def _load_analyst_rules(path: Path) -> tuple[dict[str, Any], str]:
@@ -105,7 +108,9 @@ def _load_analyst_rules(path: Path) -> tuple[dict[str, Any], str]:
             re.fullmatch(r"\d{4}", str(value)) is None for value in values
         ):
             raise ValidationError(f"Ruleset de receita possui {field} inválido")
-    return rules, _sha256(path)
+    digest = _sha256(path)
+    verify_trusted_hash(path, digest, "ruleset de receita do analista")
+    return rules, digest
 
 
 def _load_decisions(folder: Path) -> tuple[dict[str, dict[str, str]], dict[str, Any]]:
@@ -287,6 +292,12 @@ def review_revenue_folder(
     analyst_rules_file = Path(analyst_rules_path).expanduser().resolve()
     snapshot, snapshot_hash = _load_cfop_snapshot(cfop_snapshot_file)
     analyst_rules, analyst_rules_hash = _load_analyst_rules(analyst_rules_file)
+    snapshot_integrity = verify_trusted_hash(
+        cfop_snapshot_file, snapshot_hash, "snapshot oficial de CFOP"
+    )
+    analyst_rules_integrity = verify_trusted_hash(
+        analyst_rules_file, analyst_rules_hash, "ruleset de receita do analista"
+    )
     decisions, decision_summary = _load_decisions(base)
     cfop_index = {record["cfop"]: record for record in snapshot["records"]}
     sale_cfops = set(analyst_rules["usual_sale_cfops"])
@@ -493,10 +504,12 @@ def review_revenue_folder(
         "cfop_verified_at": snapshot["verified_at"],
         "cfop_source": snapshot["source"],
         "cfop_records": len(snapshot["records"]),
+        "cfop_integrity": snapshot_integrity,
         "analyst_ruleset_id": analyst_rules["ruleset_id"],
         "analyst_rules_sha256": analyst_rules_hash,
         "analyst_rules_source": analyst_rules["source"],
         "analyst_rules_approved_at": analyst_rules["approved_at"],
+        "analyst_rules_integrity": analyst_rules_integrity,
     }
     result = {
         "schema": REVENUE_SCHEMA,

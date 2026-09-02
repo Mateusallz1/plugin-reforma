@@ -49,6 +49,7 @@ def _signature(record: dict[str, Any]) -> tuple[str, dict[str, str]]:
         "product_code": _normalized(record.get("product_code")),
         "ncm": _normalized(record.get("ncm")),
         "cfop": _normalized(record.get("cfop")),
+        "nature_operation": _normalized(record.get("nature_operation")),
         "service_list_code": _normalized(record.get("service_list_code")),
         "cnae": _normalized(record.get("cnae")),
         "nbs": _normalized(record.get("nbs")),

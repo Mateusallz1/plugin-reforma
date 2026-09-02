@@ -20,9 +20,10 @@ from .core import (
     _parse_decimal,
 )
 from .operation_classification import classify_acquisition_product_item_with_reason
+from .ruleset_integrity import verify_trusted_hash
 
 ACQUISITION_SCHEMA = "br.com.planejamento-reforma-tributaria/acquisition-review"
-ACQUISITION_SCHEMA_VERSION = "1.3.0"
+ACQUISITION_SCHEMA_VERSION = "1.5.0"
 DECISION_FILE = Path("00_CONTROLE") / "classificacao-aquisicoes.csv"
 ACQUISITION_CATEGORIES = {
     "PRODUCT": "PURCHASE_GOODS",
@@ -107,7 +108,9 @@ def _load_ruleset(path: Path) -> tuple[dict[str, Any], str]:
     records = ruleset.get("classification_records")
     if not isinstance(records, list) or not records:
         raise ValidationError("Snapshot oficial não contém classificações")
-    return ruleset, _sha256(path)
+    digest = _sha256(path)
+    verify_trusted_hash(path, digest, "snapshot oficial de CST/cClassTrib")
+    return ruleset, digest
 
 
 def _load_cfop_snapshot(path: Path) -> tuple[dict[str, Any], str]:
@@ -118,7 +121,9 @@ def _load_cfop_snapshot(path: Path) -> tuple[dict[str, Any], str]:
         raise ValidationError("Snapshot CFOP possui schema incompatível")
     if not isinstance(snapshot.get("records"), list) or not snapshot["records"]:
         raise ValidationError("Snapshot CFOP não contém registros")
-    return snapshot, _sha256(path)
+    digest = _sha256(path)
+    verify_trusted_hash(path, digest, "snapshot oficial de CFOP")
+    return snapshot, digest
 
 
 def _load_cfop_analyst_rules(path: Path) -> tuple[dict[str, Any], str]:
@@ -133,7 +138,9 @@ def _load_cfop_analyst_rules(path: Path) -> tuple[dict[str, Any], str]:
             re.fullmatch(r"\d{4}", str(value)) is None for value in values
         ):
             raise ValidationError(f"Ruleset de receita possui {field} inválido")
-    return rules, _sha256(path)
+    digest = _sha256(path)
+    verify_trusted_hash(path, digest, "ruleset de receita do analista")
+    return rules, digest
 
 
 def _load_decisions(folder: Path) -> tuple[dict[str, dict[str, str]], dict[str, Any]]:
@@ -289,22 +296,71 @@ def _documentary_totals(
     }
 
 
-def _excluded_operation_counts(
+def _excluded_operation_summary(
+    validation_records: dict[str, dict[str, Any]],
     document_statuses: dict[str, str],
     reasons_by_document: dict[str, list[str]],
-) -> dict[str, dict[str, int]]:
-    """Count fully excluded documents by their original CFOP operation reason."""
+) -> dict[str, Any]:
+    """Summarize excluded operations without duplicating document values."""
 
-    counts: dict[str, dict[str, int]] = {}
+    excluded_documents = {
+        document_ref
+        for document_ref, status in document_statuses.items()
+        if status == "NON_PURCHASE_ENTRY" and document_ref in validation_records
+    }
+    document_total = sum(
+        (
+            _parse_decimal(validation_records[document_ref].get("gross_amount"))
+            or Decimal(0)
+            for document_ref in excluded_documents
+        ),
+        Decimal(0),
+    )
+    item_total = 0
+    counts: dict[str, dict[str, Any]] = {}
+    reason_totals: dict[str, Decimal] = {}
+    mixed_reason_documents = 0
+    mixed_reason_total = Decimal(0)
     for document_ref, status in document_statuses.items():
-        if status != "NON_PURCHASE_ENTRY":
+        if status != "NON_PURCHASE_ENTRY" or document_ref not in excluded_documents:
             continue
         reasons = reasons_by_document.get(document_ref, [])
-        for reason in sorted(set(reasons)):
-            entry = counts.setdefault(reason, {"document_count": 0, "item_count": 0})
-            entry["document_count"] += 1
+        item_total += len(reasons)
+        unique_reasons = sorted(set(reasons))
+        if len(unique_reasons) == 1:
+            reason_totals[unique_reasons[0]] = reason_totals.get(
+                unique_reasons[0], Decimal(0)
+            ) + (
+                _parse_decimal(validation_records[document_ref].get("gross_amount"))
+                or Decimal(0)
+            )
+        else:
+            mixed_reason_documents += 1
+            mixed_reason_total += _parse_decimal(
+                validation_records[document_ref].get("gross_amount")
+            ) or Decimal(0)
+        for reason in unique_reasons:
+            entry = counts.setdefault(
+                reason, {"reason_document_count": 0, "item_count": 0}
+            )
+            entry["reason_document_count"] += 1
             entry["item_count"] += reasons.count(reason)
-    return dict(sorted(counts.items()))
+    for reason, total in reason_totals.items():
+        counts[reason]["document_total"] = _format_decimal(total) or "0.00"
+    for entry in counts.values():
+        entry.setdefault("document_total", "0.00")
+    return {
+        "amount_basis": "UNIQUE_DOCUMENT_TOTAL",
+        "document_count": len(excluded_documents),
+        "item_count": item_total,
+        "document_total": _format_decimal(document_total) or "0.00",
+        "by_reason": dict(sorted(counts.items())),
+        "mixed_reason_documents": {
+            "document_count": mixed_reason_documents,
+            "document_total": _format_decimal(mixed_reason_total) or "0.00",
+        },
+        "reason_document_counts_may_overlap": True,
+    }
 
 
 def review_acquisitions_folder(
@@ -354,6 +410,9 @@ def review_acquisitions_folder(
 
     ruleset_file = Path(ruleset_path).expanduser().resolve()
     ruleset, ruleset_hash = _load_ruleset(ruleset_file)
+    ruleset_integrity = verify_trusted_hash(
+        ruleset_file, ruleset_hash, "snapshot oficial de CST/cClassTrib"
+    )
     decisions, decision_summary = _load_decisions(base)
     period = content_summary.get("scope", {}).get("period", "")
     period_start, period_end = _period_bounds(period)
@@ -379,6 +438,9 @@ def review_acquisitions_folder(
                 "Revisão de aquisições com CFOP exige ruleset do analista"
             )
         analyst_rules, analyst_rules_hash = _load_cfop_analyst_rules(analyst_rules_file)
+        analyst_rules_integrity = verify_trusted_hash(
+            analyst_rules_file, analyst_rules_hash, "ruleset de receita do analista"
+        )
         cfop_index = {
             str(record["cfop"]): record for record in cfop_snapshot["records"]
         }
@@ -393,6 +455,12 @@ def review_acquisitions_folder(
             "analyst_ruleset_id": analyst_rules.get("ruleset_id"),
             "analyst_rules_sha256": analyst_rules_hash,
             "analyst_rules_source": analyst_rules.get("source"),
+            **verify_trusted_hash(
+                Path(cfop_ruleset_path).expanduser().resolve(),
+                cfop_hash,
+                "snapshot oficial de CFOP",
+            ),
+            "analyst_rules_integrity": analyst_rules_integrity,
         }
 
     acquisition_records: list[dict[str, Any]] = []
@@ -548,12 +616,13 @@ def review_acquisitions_folder(
         "legal_sources": ruleset["legal_sources"],
         "classification_records": len(ruleset["classification_records"]),
         "cst_records": len(ruleset["cst_records"]),
+        **ruleset_integrity,
     }
     if cfop_lock is not None:
         ruleset_lock["cfop"] = cfop_lock
     documentary_totals = _documentary_totals(validation_records, document_statuses)
-    excluded_operation_counts = _excluded_operation_counts(
-        document_statuses, product_operation_reasons_by_document
+    excluded_operation_summary = _excluded_operation_summary(
+        validation_records, document_statuses, product_operation_reasons_by_document
     )
     result = {
         "schema": ACQUISITION_SCHEMA,
@@ -576,7 +645,7 @@ def review_acquisitions_folder(
         "category_counts": dict(sorted(category_counts.items())),
         "category_amounts": category_amounts,
         "documentary_totals": documentary_totals,
-        "excluded_operation_counts": excluded_operation_counts,
+        "excluded_operation_summary": excluded_operation_summary,
         "purchase_operation_status_counts": dict(
             sorted(
                 Counter(
@@ -663,22 +732,32 @@ def _markdown_report(result: dict[str, Any]) -> str:
             "Subtotais acima usam o total de cada documento uma única vez. Compras sem crédito permanecem incluídas; este relatório não conclui custo econômico ou direito a crédito.",
         ]
     )
-    if result["excluded_operation_counts"]:
+    excluded_summary = result["excluded_operation_summary"]
+    if excluded_summary["document_count"]:
         lines.extend(
             [
                 "",
                 "### Operações excluídas do total de compras",
                 "",
-                "| Motivo CFOP | Documentos | Itens |",
-                "|---|---:|---:|",
+                f"- Total de documentos excluídos: {excluded_summary['document_count']}",
+                f"- Valor total dos documentos excluídos: {excluded_summary['document_total']}",
+                f"- Itens excluídos: {excluded_summary['item_count']}",
+                "",
+                "| Motivo CFOP | Documentos por motivo | Itens | Valor documental |",
+                "|---|---:|---:|---:|",
             ]
         )
-        for reason, counts in result["excluded_operation_counts"].items():
+        for reason, counts in excluded_summary["by_reason"].items():
             lines.append(
-                f"| `{reason}` | {counts['document_count']} | {counts['item_count']} |"
+                f"| `{reason}` | {counts['reason_document_count']} | {counts['item_count']} | {counts['document_total']} |"
+            )
+        mixed = excluded_summary["mixed_reason_documents"]
+        if mixed["document_count"]:
+            lines.append(
+                f"| `MULTIPLE_NON_PURCHASE_REASONS` | {mixed['document_count']} | — | {mixed['document_total']} |"
             )
         lines.append(
-            "Os motivos acima são demonstrados sem ratear o valor total de documentos entre operações."
+            "A contagem por motivo pode se sobrepor quando um documento possuir mais de uma operação; o valor total é contado uma única vez."
         )
     lines.extend(
         [

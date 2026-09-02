@@ -24,6 +24,7 @@ Execute o UC-003C somente quando `06_REVISAO_RECEITAS/revenue-summary.json` indi
 - `DECLARED_WITHOUT_DOCUMENT_SUPPORT` significa somente que o suporte não foi localizado na base fornecida. Registre `NON_ISSUANCE_CONFIRMED` apenas após decisão expressa e evidenciada do analista em evolução própria desse contrato.
 - Preserve valores e registros detalhados em `simple-reconciliation-items.local.jsonl` e `fila-conciliacao-simples.csv`. Não reproduza CNPJ, CPF, recibo, autenticação, IP, certificado ou conteúdo integral dos PDFs na conversa.
 - Diferenças por dedução, devolução, caixa, competência ou declaração retificadora permanecem pendentes até evidência e revisão humana.
+- Quando a declaração indicar regime `CAIXA`, o resultado publica o aviso `REVENUE_REGIME_CAIXA`. É um alerta não bloqueante: a comparação documental exige análise temporal específica.
 - O UC-003C não conclui tributação de IBS/CBS e mantém `uc004_planning_authorized=false`.
 - Regras de reconhecimento de faturamento com vigência a partir de 2027 não devem ser aplicadas retroativamente a competências de 2026.
 

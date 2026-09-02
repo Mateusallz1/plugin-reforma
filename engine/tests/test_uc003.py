@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from fiscal_document_intake.acquisition import (
+    _excluded_operation_summary,
     review_acquisitions_folder,
     write_acquisition_outputs,
 )
@@ -186,14 +187,47 @@ def test_uc003_does_not_count_sales_return_as_purchase(tmp_path: Path) -> None:
     assert result["non_acquisition_records"] == 1
     assert result["documentary_totals"]["gross_documentary_purchases"] == "600.00"
     assert result["documentary_totals"]["non_purchase_entry_operations"] == "50.00"
-    assert result["excluded_operation_counts"] == {
-        "SALES_RETURN_INBOUND": {"document_count": 1, "item_count": 1}
+    assert result["excluded_operation_summary"] == {
+        "amount_basis": "UNIQUE_DOCUMENT_TOTAL",
+        "document_count": 1,
+        "item_count": 1,
+        "document_total": "50.00",
+        "by_reason": {
+            "SALES_RETURN_INBOUND": {
+                "reason_document_count": 1,
+                "item_count": 1,
+                "document_total": "50.00",
+            }
+        },
+        "mixed_reason_documents": {"document_count": 0, "document_total": "0.00"},
+        "reason_document_counts_may_overlap": True,
     }
     report_path = write_acquisition_outputs(result, folder / "05_REVISAO_AQUISICOES")[
         -1
     ]
     assert "Operações excluídas do total de compras" in report_path.read_text(
         encoding="utf-8"
+    )
+    assert "SALES_RETURN_INBOUND` | 1 | 1 | 50.00" in report_path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_excluded_operation_summary_does_not_rate_mixed_document() -> None:
+    summary = _excluded_operation_summary(
+        {"DOC-1": {"gross_amount": "100.00"}},
+        {"DOC-1": "NON_PURCHASE_ENTRY"},
+        {"DOC-1": ["SALES_RETURN_INBOUND", "NON_REVENUE_REMITTANCE"]},
+    )
+
+    assert summary["document_count"] == 1
+    assert summary["document_total"] == "100.00"
+    assert summary["mixed_reason_documents"] == {
+        "document_count": 1,
+        "document_total": "100.00",
+    }
+    assert all(
+        item["document_total"] == "0.00" for item in summary["by_reason"].values()
     )
 
 
@@ -259,6 +293,17 @@ def test_uc003_requires_authorized_uc002_outputs(tmp_path: Path) -> None:
     folder.mkdir()
     with pytest.raises(ValidationError, match="content-summary.json"):
         review_acquisitions_folder(folder, RULESET)
+
+
+def test_uc003_rejects_tampered_cclass_snapshot(tmp_path: Path) -> None:
+    folder = make_acquisition_case(tmp_path)
+    tampered_ruleset = tmp_path / RULESET.name
+    tampered_ruleset.write_bytes(RULESET.read_bytes() + b"\n")
+
+    with pytest.raises(
+        ValidationError, match="Hash do snapshot oficial de CST/cClassTrib"
+    ):
+        review_acquisitions_folder(folder, tampered_ruleset)
 
 
 def test_uc003_handles_period_without_acquisitions(tmp_path: Path) -> None:

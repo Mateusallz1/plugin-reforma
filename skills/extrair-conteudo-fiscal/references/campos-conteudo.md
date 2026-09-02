@@ -4,7 +4,7 @@
 
 - identificação: `document_ref`, `item_ref`, `nItem`;
 - produto: `cProd`, `cEAN`, `xProd`, `NCM`, `CEST`, `cBenef`;
-- operação: `CFOP`, `uCom`, `qCom`, `vUnCom`, `vProd`, `indTot`;
+- operação: `natOp` do documento (`ide/natOp`), `CFOP`, `uCom`, `qCom`, `vUnCom`, `vProd`, `indTot`; o `natOp` é copiado para cada produto como evidência documental e não substitui a classificação por CFOP;
 - composição do total do documento: os valores por item (`vDesc`, `vFrete`, `vSeg`, `vOutro`, `vIPI`, `vICMSST`, `vFCPST`, `vII` e `vIPIDevol`) e os totais declarados em `ICMSTot`/`ISSQNtot` (`vProd`, `vDesc`, `vICMSDeson`, `vST`, `vFCPST`, `vFrete`, `vSeg`, `vOutro`, `vII`, `vIPI`, `vIPIDevol`, `vServ` e `vNF`). São extraídos como valores, não como códigos, para que o UC-003B comprove a composição oficial sem somar o mesmo componente duas vezes;
 - legado: origem e CST/CSOSN do ICMS, CST de PIS, Cofins e IPI;
 - IBS/CBS: CST, `cClassTrib`, base e alíquotas quando informadas.

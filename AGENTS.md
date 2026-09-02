@@ -6,6 +6,7 @@
 - A validação documental grava `validation-result.json` e `relatorio-prontidao-documental.md` na pasta do cliente.
 - As etapas gravam artefatos em `03_SAIDAS/`, `04_CONTEUDO/`, `05_REVISAO_AQUISICOES/`, `06_REVISAO_RECEITAS/`, `07_CONCILIACAO_SIMPLES/` e `08_STATUS_PLANEJAMENTO/`. Arquivos `*.local.jsonl` contêm detalhes comerciais e devem permanecer locais e restritos.
 - O motor compartilhado fica em `engine/`; `scripts/invoke-engine.ps1` é a única autoridade para preparar o ambiente `uv` e executar o CLI.
+- Somente `planejar-reforma-tributaria` pode ser invocada implicitamente; skills operacionais e `uv` exigem invocação explícita.
 - O MCP não faz parte do runtime ativo. O legado está preservado em `legacy/mcp/` apenas para consulta e migração futura.
 - Não executar, editar ou reativar arquivos de `legacy/mcp/` durante uma análise normal.
 
@@ -28,11 +29,13 @@
 - A reutilização incremental exige hash de conteúdo e coerência dos schemas e IDs das saídas. Presença de arquivo, tamanho e `mtime` não são evidência suficiente.
 - `.reforma-tributaria/` contém estado privado da carteira e deve permanecer ignorada pelo Git. Resultados públicos retornam somente referências relativas, nunca caminhos empresariais absolutos.
 - Antes de usar a tabela CST/cClassTrib, confira a publicação oficial atual. Divergência de versão exige manutenção explícita do snapshot e nova bateria de testes.
+- O `ruleset-lock` só é válido quando o hash do snapshot/ruleset também coincide com o digest confiável embarcado; não aceite um hash apenas recalculado sobre arquivo editado.
 - A revisão de receitas usa o total do documento, direção e CFOP. CFOP de venda em entrada continua sendo compra; remessa, retorno, anulação e devolução de compra ficam fora da receita operacional.
-- Na revisão de aquisições, entradas que não são compras permanecem fora da população detalhada, mas devem ser demonstradas no resumo por motivo CFOP em `excluded_operation_counts`, sem rateio financeiro automático.
+- Na revisão de aquisições, entradas que não são compras permanecem fora da população detalhada, mas devem ser demonstradas no resumo em `excluded_operation_summary`: valor e documentos distintos uma única vez, motivos CFOP em `by_reason` e valores por motivo único; documentos mistos ficam em `mixed_reason_documents`, sem rateio.
 - A composição de `vNF` usa os totais declarados em `ICMSTot`/`ISSQNtot`, conferidos contra `vProd` e `indTot` dos itens. Não some valores de item e totais do documento duas vezes; resíduo não explicado mantém a revisão pendente.
 - Checklist do analista complementa a tabela CFOP oficial e não é exaustivo. `ind_excluded_ibs_cbs` não equivale sozinho a operação sem receita.
 - O UC-003C usa a declaração PGDAS-D como autoridade, concilia primeiro por estabelecimento e atividade e preserva cobertura parcial. Ausência de suporte documental não comprova não emissão; `non_issuance_confirmed` permanece falso sem decisão humana expressa.
+- Regime PGDAS-D `CAIXA` gera apenas o aviso não bloqueante `REVENUE_REGIME_CAIXA`; diferenças temporais exigem revisão humana.
 - O PGDAS-D de 2026 usa as regras vigentes da competência. Não aplique retroativamente regras de reconhecimento de faturamento com vigência a partir de 2027.
 - Respostas normais do coordenador não exibem nomes de gates, códigos de saída, hashes ou pastas técnicas. Traduza pendências em linguagem comum e diga se bloqueiam uma frente, um estabelecimento ou todo o fluxo.
 

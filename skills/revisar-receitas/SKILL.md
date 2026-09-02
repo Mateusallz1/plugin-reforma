@@ -13,6 +13,9 @@ Execute esta fase do UC-003 somente quando o UC-002 indicar `uc003_analysis_auth
 2. Confirme que o ruleset em `references/rules/` corresponde ao checklist homologado pelo analista.
 3. Se a tabela oficial estiver mais recente, informe `SOURCE_UPDATE_REQUIRED` e não classifique com snapshot antigo.
 
+Os loaders também conferem o hash confiável do snapshot CFOP e do ruleset do
+analista. Edição local ou arquivo com nome não reconhecido interrompe a revisão.
+
 ## Caminho rápido
 
 1. Execute uma vez `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-revenue-review.ps1 -Folder <pasta>`.

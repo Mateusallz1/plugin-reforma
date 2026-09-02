@@ -18,7 +18,7 @@ from .revenue import REVENUE_SCHEMA_VERSION
 from .simple_reconciliation import SIMPLE_RECONCILIATION_SCHEMA_VERSION
 
 PLANNING_STATUS_SCHEMA = "br.com.planejamento-reforma-tributaria/planning-status"
-PLANNING_STATUS_SCHEMA_VERSION = "1.4.0"
+PLANNING_STATUS_SCHEMA_VERSION = "1.6.0"
 DOCUMENTARY_SUMMARY_SCHEMA = (
     "br.com.planejamento-reforma-tributaria/documentary-summary"
 )
@@ -247,8 +247,8 @@ def _documentary_summary(
             "category_counts": acquisition_data.get("category_counts", {}),
             "category_amounts": acquisition_data.get("category_amounts", {}),
             "documentary_totals": acquisition_data.get("documentary_totals", {}),
-            "excluded_operation_counts": acquisition_data.get(
-                "excluded_operation_counts", {}
+            "excluded_operation_summary": acquisition_data.get(
+                "excluded_operation_summary", {}
             ),
             "nature_status": acquisition_nature_status,
         },
@@ -835,7 +835,9 @@ def _append_documentary_summary(lines: list[str], result: dict[str, Any]) -> Non
     content = _mapping(documentary.get("content"))
     acquisitions = _mapping(documentary.get("acquisitions"))
     acquisition_totals = _mapping(acquisitions.get("documentary_totals"))
-    excluded_operation_counts = _mapping(acquisitions.get("excluded_operation_counts"))
+    excluded_operation_summary = _mapping(
+        acquisitions.get("excluded_operation_summary")
+    )
     revenue = _mapping(documentary.get("revenue"))
     revenue_totals = _mapping(revenue.get("totals"))
     comparison = _mapping(documentary.get("purchase_sales_comparison"))
@@ -955,20 +957,31 @@ def _append_documentary_summary(lines: list[str], result: dict[str, Any]) -> Non
                 f"- Operações de entrada fora de compras: {_summary_value(acquisition_totals.get('non_purchase_entry_operations'))}.",
             ]
         )
-    if excluded_operation_counts:
+    if excluded_operation_summary.get("document_count"):
         lines.extend(
             [
+                f"- Total de documentos de entrada fora de compras: {_summary_value(excluded_operation_summary.get('document_count'))}.",
+                f"- Valor total dos documentos de entrada fora de compras: {_summary_value(excluded_operation_summary.get('document_total'))}.",
+                f"- Documentos com motivos múltiplos sem rateio: {_summary_value(_mapping(excluded_operation_summary.get('mixed_reason_documents')).get('document_count'))}.",
                 "- Operações de entrada fora de compras por motivo:",
                 "",
-                "| Motivo CFOP | Documentos | Itens |",
-                "|---|---:|---:|",
+                "| Motivo CFOP | Documentos por motivo | Itens | Valor documental |",
+                "|---|---:|---:|---:|",
             ]
         )
-        for reason, counts in sorted(excluded_operation_counts.items()):
+        for reason, counts in sorted(
+            _mapping(excluded_operation_summary.get("by_reason")).items()
+        ):
             operation_counts = _mapping(counts)
             lines.append(
-                f"| `{reason}` | {_summary_value(operation_counts.get('document_count'))} | "
-                f"{_summary_value(operation_counts.get('item_count'))} |"
+                f"| `{reason}` | {_summary_value(operation_counts.get('reason_document_count'))} | "
+                f"{_summary_value(operation_counts.get('item_count'))} | "
+                f"{_summary_value(operation_counts.get('document_total'))} |"
+            )
+        mixed = _mapping(excluded_operation_summary.get("mixed_reason_documents"))
+        if mixed.get("document_count"):
+            lines.append(
+                f"| `MULTIPLE_NON_PURCHASE_REASONS` | {mixed.get('document_count')} | — | {mixed.get('document_total')} |"
             )
 
     lines.extend(

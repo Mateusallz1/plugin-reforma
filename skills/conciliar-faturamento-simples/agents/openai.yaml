@@ -3,4 +3,4 @@ interface:
   short_description: "Concilia receitas fiscais com o PGDAS-D"
   default_prompt: "Use $conciliar-faturamento-simples para conciliar a receita documental com o PGDAS-D."
 policy:
-  allow_implicit_invocation: true
+  allow_implicit_invocation: false

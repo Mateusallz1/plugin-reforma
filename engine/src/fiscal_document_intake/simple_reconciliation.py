@@ -424,6 +424,14 @@ def reconcile_simple_revenue(
         for record in matched_records
         if record["status"] not in RECONCILED_STATUSES
     )
+    if declaration["revenue_regime"] == "CAIXA":
+        warnings.append(
+            {
+                "code": "REVENUE_REGIME_CAIXA",
+                "ref": "PGDAS_DECLARATION",
+                "severity": "WARNING",
+            }
+        )
 
     return {
         "schema": SIMPLE_RECONCILIATION_SCHEMA,
@@ -477,6 +485,7 @@ def reconcile_simple_revenue(
             "Ausência de documento na base fornecida não comprova não emissão de nota fiscal.",
             "A conciliação usa a receita declarada no PGDAS-D e não conclui tratamento de IBS/CBS.",
             "Deduções, diferenças temporais e declarações retificadoras exigem evidência e revisão do analista.",
+            "No regime CAIXA, a comparação documental exige análise temporal específica; o aviso não bloqueia a conciliação.",
             "DAS gerado não comprova pagamento; a arrecadação não é objeto deste UC.",
         ],
         "_private_records": records,
@@ -512,6 +521,13 @@ def _report(result: dict[str, Any]) -> str:
         "## Ocorrências",
         "",
     ]
+    if result["scope"]["revenue_regime"] == "CAIXA":
+        lines.extend(
+            [
+                "> **Aviso:** o regime CAIXA exige análise temporal específica; este aviso não bloqueia a conciliação.",
+                "",
+            ]
+        )
     if result["warnings"]:
         lines.extend(
             f"- `{warning['code']}` - `{warning['ref']}`"

@@ -14,11 +14,34 @@ from fiscal_document_intake.acquisition import (
 )
 from fiscal_document_intake.core import ValidationError
 from fiscal_document_intake.portfolio_review import (
+    _signature,
     approve_portfolio_group,
     export_portfolio_review,
     review_portfolio,
 )
 from test_uc003 import RULESET, make_acquisition_case
+
+
+def test_portfolio_signature_includes_document_nature_operation() -> None:
+    base = {
+        "record_kind": "PRODUCT",
+        "product_code": "P-1",
+        "ncm": "01012100",
+        "cfop": "5102",
+        "service_list_code": None,
+        "cnae": None,
+        "nbs": None,
+        "municipal_tax_code": None,
+        "transport_modal": None,
+        "description": "PRODUTO",
+    }
+    sale = {**base, "nature_operation": "VENDA"}
+    transfer = {**base, "nature_operation": "TRANSFERENCIA"}
+
+    sale_group, _ = _signature(sale)
+    transfer_group, _ = _signature(transfer)
+
+    assert sale_group != transfer_group
 
 
 def make_portfolio(tmp_path: Path) -> tuple[Path, list[Path]]:

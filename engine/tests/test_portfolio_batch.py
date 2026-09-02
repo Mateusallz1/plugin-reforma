@@ -7,7 +7,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from fiscal_document_intake.core import ValidationError
 from fiscal_document_intake.portfolio_batch import (
+    diagnose_period_discovery,
     discover_periods,
     process_portfolio_periods,
 )
@@ -198,6 +200,30 @@ def test_batch_discovery_ignores_pgdas_only_periods(tmp_path: Path) -> None:
     assert len(periods) == 1
     assert periods[0]["period"] == "2026-03"
     assert periods[0]["pgdas_folder"] == pgdas
+
+
+def test_batch_reports_invalid_period_folder_names(tmp_path: Path) -> None:
+    root = tmp_path / "portfolio"
+    invalid = root / "MATRIZ" / "01.2026"
+    (invalid / "01_XML").mkdir(parents=True)
+    (invalid / "01_XML" / "sale.xml").write_text("<xml />", encoding="utf-8")
+
+    assert diagnose_period_discovery(root) == {"invalid_period_name_folders": 1}
+    with pytest.raises(ValidationError, match="MM-AAAA ou AAAA-MM"):
+        run_batch(root)
+
+
+def test_batch_does_not_flag_internal_folders_of_valid_periods(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "portfolio"
+    valid = root / "MATRIZ" / "01-2026"
+    for name in ("Cte", "NFe ENTRADAS", "NFe SAIDAS"):
+        nested = valid / name
+        nested.mkdir(parents=True)
+        (nested / "document.xml").write_text("<xml />", encoding="utf-8")
+
+    assert diagnose_period_discovery(root) == {"invalid_period_name_folders": 0}
 
 
 @pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="Windows launcher")
