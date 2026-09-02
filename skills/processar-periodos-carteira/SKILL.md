@@ -66,5 +66,6 @@ Não exponha CNPJ, chaves fiscais, hashes, caminhos técnicos ou detalhes comerc
 
 - Competências nunca são combinadas em uma única apuração.
 - A configuração local de estabelecimentos pode conter identificadores fiscais e não deve sair da pasta da carteira.
+- A identidade da configuração local é repassada às etapas de contrapartes; não é necessário criar um `00_CONTROLE/escopo.json` duplicado em cada competência para o modo carteira.
 - O lote não transforma classificação operacional em direito a crédito ou conclusão tributária.
 - Ausência documental continua sem comprovar não emissão.

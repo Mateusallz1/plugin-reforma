@@ -5,6 +5,7 @@
 - A porta de entrada para uma empresa e uma competência é `planejar-reforma-tributaria`. Para várias competências, `processar-periodos-carteira` executa o lote incremental. Para a revisão central, `revisar-carteira-aquisicoes` consolida pendências e registra aprovações com alcance explícito. A skill `revisar-contrapartes` apura fornecedores, clientes CNPJ e vendas para CPF. As skills UC-001 a UC-003D permanecem como componentes operacionais.
 - A validação documental grava `validation-result.json` e `relatorio-prontidao-documental.md` na pasta do cliente.
 - As etapas gravam artefatos em `03_SAIDAS/`, `04_CONTEUDO/`, `05_REVISAO_AQUISICOES/`, `06_REVISAO_RECEITAS/`, `07_CONCILIACAO_SIMPLES/` e `08_STATUS_PLANEJAMENTO/`. Arquivos `*.local.jsonl` contêm detalhes comerciais e devem permanecer locais e restritos.
+- A revisão direta de contrapartes usa `00_CONTROLE/escopo.json`; no modo carteira, deve consumir a identidade validada em `.reforma-tributaria/configuracao-lote.local.json`, sem exigir cópias por competência.
 - O motor compartilhado fica em `engine/`; `scripts/invoke-engine.ps1` é a única autoridade para preparar o ambiente `uv` e executar o CLI.
 - Somente `planejar-reforma-tributaria` pode ser invocada implicitamente; skills operacionais e `uv` exigem invocação explícita.
 - O MCP não faz parte do runtime ativo. O legado está preservado em `legacy/mcp/` apenas para consulta e migração futura.

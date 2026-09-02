@@ -210,6 +210,20 @@ def _document_party_details(
     return parties
 
 
+def _own_taxpayer_ids(scope_identity: dict[str, Any]) -> set[str]:
+    if not isinstance(scope_identity, dict):
+        raise ValidationError("A identidade do estabelecimento deve ser um objeto")
+    taxpayers = scope_identity.get("entity_taxpayer_ids")
+    if not isinstance(taxpayers, list) or not taxpayers:
+        raise ValidationError(
+            "A identidade do estabelecimento deve conter ao menos um CNPJ"
+        )
+    normalized = {_digits(value) for value in taxpayers}
+    if any(len(value) != 14 for value in normalized):
+        raise ValidationError("A identidade do estabelecimento contém um CNPJ inválido")
+    return normalized
+
+
 def _period_bounds(period: str) -> tuple[date, date]:
     if PERIOD_PATTERN.fullmatch(period) is None:
         raise ValidationError("A competência deve estar no formato AAAA-MM")
@@ -387,7 +401,10 @@ def _aggregate_party(
 
 
 def review_counterparties_folder(
-    folder: Path | str, *, simples_registry_path: Path | str | None = None
+    folder: Path | str,
+    *,
+    simples_registry_path: Path | str | None = None,
+    scope_identity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     base = Path(folder).expanduser().resolve()
     if not base.is_dir():
@@ -403,10 +420,13 @@ def review_counterparties_folder(
     ):
         raise ValidationError("UC-003D exige validação documental vigente e autorizada")
     period = str(validation.get("scope", {}).get("period") or "")
-    scope_input = _load_json(
-        base / "00_CONTROLE" / "escopo.json", "00_CONTROLE/escopo.json"
-    )
-    own_ids = {_digits(value) for value in scope_input.get("entity_taxpayer_ids", [])}
+    if scope_identity is None:
+        scope_input = _load_json(
+            base / "00_CONTROLE" / "escopo.json", "00_CONTROLE/escopo.json"
+        )
+    else:
+        scope_input = scope_identity
+    own_ids = _own_taxpayer_ids(scope_input)
     documents = {
         record["document_ref"]: record
         for record in validation.get("documents", {}).get("records", [])
@@ -467,7 +487,9 @@ def review_counterparties_folder(
         customer_inputs,
         role="CUSTOMER",
         registry=registry,
-        document_evidence=evidence,
+        # The CRT in a sales document identifies the issuer, not the
+        # recipient. Customer regime requires the optional local registry.
+        document_evidence={},
     )
 
     def public_by_status(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:

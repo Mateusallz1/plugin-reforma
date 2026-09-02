@@ -421,7 +421,9 @@ def _process_period(
         revenue = review_revenue_folder(folder, cfop_ruleset, analyst_rules)
         write_revenue_outputs(revenue, folder / "06_REVISAO_RECEITAS")
         counterparties = review_counterparties_folder(
-            folder, simples_registry_path=simples_registry
+            folder,
+            simples_registry_path=simples_registry,
+            scope_identity=identity,
         )
         write_counterparty_outputs(counterparties, folder)
 

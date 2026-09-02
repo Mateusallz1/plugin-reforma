@@ -50,7 +50,7 @@ def test_counterparties_separate_suppliers_cnpj_customers_and_cpf_sales(
         }
     }
     assert result["customer_summary"]["cnpj_by_simples_status"] == {
-        "OPTANTE_SIMPLES": {
+        "UNKNOWN": {
             "counterparty_count": 1,
             "document_count": 1,
             "document_total": "200.00",
@@ -60,6 +60,7 @@ def test_counterparties_separate_suppliers_cnpj_customers_and_cpf_sales(
         "document_count": 1,
         "document_total": "300.00",
     }
+    assert result["_private_customers"][0]["evidence_sources"] == []
 
     written = write_counterparty_outputs(result, folder, meeting_report=True)
     supplier_local = next(
@@ -130,6 +131,33 @@ def test_counterparties_resolve_cnpj_customer_from_local_registry(
 
     assert customer["simples_status"] == "OPTANTE_SIMPLES"
     assert "RFB_SNAPSHOT" in customer["evidence_sources"]
+
+
+def test_counterparties_accept_batch_identity_without_period_scope(
+    tmp_path: Path,
+) -> None:
+    folder = make_folder(tmp_path, "batch-identity", document_families=["NFE"])
+    sale_key = access_key(COMPANY, "55", 126)
+    sale_dir = folder / "01_XML" / "NFE" / "SAIDA"
+    sale_dir.mkdir(parents=True)
+    (sale_dir / "sale.xml").write_text(
+        nfe_xml(sale_key, "55", COMPANY, OTHER, "2026-03-07", "300.00"),
+        encoding="utf-8",
+    )
+    _prepare(folder)
+    (folder / "00_CONTROLE" / "escopo.json").unlink()
+
+    result = review_counterparties_folder(
+        folder,
+        scope_identity={
+            "entity_ref": "EMPRESA-001",
+            "establishment_ref": "ESTAB-001",
+            "entity_taxpayer_ids": [COMPANY],
+        },
+    )
+
+    assert result["customer_summary"]["sales_to_individuals"]["document_count"] == 0
+    assert result["customer_summary"]["cnpj_customer_count"] == 1
 
 
 def test_counterparties_preserve_distinct_crt_values_in_one_competence(

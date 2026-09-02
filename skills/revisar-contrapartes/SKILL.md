@@ -9,6 +9,11 @@ Execute depois que o UC-001 tiver produzido `03_SAIDAS/validation-result.json`
 vigente e autorizado. A apuração usa somente documentos incluídos e autorizados
 na pasta indicada.
 
+Na execução direta, a pasta também precisa conter `00_CONTROLE/escopo.json`,
+que define os CNPJs próprios. No processamento por carteira, o lote repassa a
+identidade já validada em `.reforma-tributaria/configuracao-lote.local.json`;
+nesse modo não é necessário duplicar o `escopo.json` em cada competência.
+
 ## Caminho rápido
 
 1. Execute `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/run-counterparty-review.ps1 -Folder <pasta>`.
