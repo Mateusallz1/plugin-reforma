@@ -43,6 +43,7 @@ def write_revenue_summary(
     status: str = "REVENUE_REVIEW_READY",
     establishment_id: str = MATRIX,
     entity_ref: str = "EMPRESA-SYNTHETIC",
+    reviewed_documents: int | None = None,
 ) -> None:
     target = folder / "06_REVISAO_RECEITAS"
     target.mkdir(parents=True)
@@ -67,6 +68,8 @@ def write_revenue_summary(
         },
         "gates": {"revenue_population_ready": True},
     }
+    if reviewed_documents is not None:
+        payload["reviewed_documents"] = reviewed_documents
     (target / "revenue-summary.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
@@ -88,7 +91,9 @@ def write_pgdas_declaration(
     total = _amount(matrix_goods) + _amount(matrix_services)
     if branch_goods is not None:
         total += _amount(branch_goods)
-    declared_total = f"{total:.2f}".replace(".", ",")
+    declared_total = (
+        f"{total:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+    )
     lines = [
         "Programa Gerador do Documento de Arrecadacao do Simples Nacional - Declaratorio",
         "Declaracao Original",
@@ -199,6 +204,38 @@ def test_uc003c_consolidates_matrix_and_branch_from_one_portfolio_root(
     assert result["totals"]["matched_difference"] == "0.00"
 
 
+def test_uc003c_group_marks_zero_document_establishment_as_missing(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "portfolio-zero-documents"
+    matrix_folder = root / "MATRIZ" / "01-2026"
+    branch_folder = root / "FILIAL" / "01-2026"
+    pgdas = root / "SN" / "01-2026"
+    write_revenue_summary(matrix_folder, establishment_id=MATRIX)
+    write_revenue_summary(
+        branch_folder,
+        goods="0.00",
+        services="0.00",
+        status="REVENUE_REVIEW_NO_DOCUMENT",
+        establishment_id=BRANCH,
+        reviewed_documents=0,
+    )
+    write_pgdas_declaration(pgdas, branch_goods="50,00")
+
+    result = reconcile_simple_revenue_group([matrix_folder, branch_folder], pgdas)
+
+    assert result["status"] == "SIMPLE_REVENUE_PARTIAL_COVERAGE"
+    assert result["scope"]["documentary_establishments"] == 1
+    assert result["coverage"]["missing_establishment_refs"] == [
+        establishment_ref(BRANCH)
+    ]
+    assert result["status_counts"] == {
+        "ESTABLISHMENT_DOCUMENTS_MISSING": 1,
+        "RECONCILED": 2,
+    }
+    assert result["totals"]["uncovered_pgdas_revenue"] == "50.00"
+
+
 def test_uc003c_accepts_explicit_group_identity_for_distinct_establishment_refs(
     tmp_path: Path,
 ) -> None:
@@ -279,6 +316,38 @@ def test_uc003c_marks_declared_revenue_without_document_support(
     )
 
 
+def test_uc003c_marks_zero_document_establishment_as_missing_support(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "company-zero-documents"
+    pgdas = tmp_path / "pgdas-zero-documents"
+    write_revenue_summary(
+        folder,
+        goods="0.00",
+        services="0.00",
+        status="REVENUE_REVIEW_NO_DOCUMENT",
+        reviewed_documents=0,
+    )
+    write_pgdas_declaration(
+        pgdas,
+        matrix_goods="15778,00",
+        matrix_services="0,00",
+        branch_goods=None,
+    )
+
+    result = reconcile_simple_revenue(folder, pgdas)
+
+    assert result["status"] == "SIMPLE_REVENUE_REVIEW_REQUIRED"
+    assert result["status_counts"] == {
+        "ESTABLISHMENT_DOCUMENTS_MISSING": 1,
+        "NO_MOVEMENT": 1,
+    }
+    assert result["totals"]["pgdas_matched_establishment"] == "15778.00"
+    assert result["totals"]["documentary_matched_establishment"] == "0.00"
+    assert result["totals"]["matched_difference"] == "15778.00"
+    assert result["gates"]["non_issuance_confirmed"] is False
+
+
 def test_uc003c_reconciles_month_without_any_fiscal_document(
     tmp_path: Path,
 ) -> None:
@@ -290,6 +359,7 @@ def test_uc003c_reconciles_month_without_any_fiscal_document(
         goods="0.00",
         services="0.00",
         status="REVENUE_REVIEW_NO_DOCUMENT",
+        reviewed_documents=0,
     )
     write_pgdas_declaration(pgdas, branch_goods=None)
 
@@ -298,7 +368,7 @@ def test_uc003c_reconciles_month_without_any_fiscal_document(
     assert result["status"] == "SIMPLE_REVENUE_REVIEW_REQUIRED"
     assert result["gates"]["documentary_scope_reconciled"] is False
     assert result["gates"]["non_issuance_confirmed"] is False
-    assert result["status_counts"] == {"DECLARED_WITHOUT_DOCUMENT_SUPPORT": 2}
+    assert result["status_counts"] == {"ESTABLISHMENT_DOCUMENTS_MISSING": 2}
     assert result["totals"]["documentary_matched_establishment"] == "0.00"
     assert result["totals"]["pgdas_matched_establishment"] == "300.00"
     assert (
@@ -330,6 +400,7 @@ def test_uc003c_confirms_no_movement_only_against_the_declaration(
     assert result["gates"]["group_coverage_complete"] is True
     assert result["gates"]["analyst_review_required"] is False
     assert result["gates"]["non_issuance_confirmed"] is False
+    assert result["gates"]["simulation_authorized"] is True
     assert result["gates"]["uc004_planning_authorized"] is False
     assert set(result["status_counts"]) == {"NO_MOVEMENT"}
     assert result["warnings"] == []

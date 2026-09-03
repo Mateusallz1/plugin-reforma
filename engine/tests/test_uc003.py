@@ -114,6 +114,7 @@ def test_uc003_reviews_acquisitions_deterministically_and_preserves_privacy(
         "acquisition_review_complete": False,
         "legal_evidence_complete": False,
         "analyst_review_required": True,
+        "simulation_authorized": True,
         "uc004_planning_authorized": False,
     }
     assert first["ruleset_lock"]["classification_records"] == 164

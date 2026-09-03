@@ -19,11 +19,11 @@ from .revenue import REVENUE_SCHEMA_VERSION
 from .simple_reconciliation import SIMPLE_RECONCILIATION_SCHEMA_VERSION
 
 PLANNING_STATUS_SCHEMA = "br.com.planejamento-reforma-tributaria/planning-status"
-PLANNING_STATUS_SCHEMA_VERSION = "1.9.0"
+PLANNING_STATUS_SCHEMA_VERSION = "1.13.0"
 DOCUMENTARY_SUMMARY_SCHEMA = (
     "br.com.planejamento-reforma-tributaria/documentary-summary"
 )
-DOCUMENTARY_SUMMARY_SCHEMA_VERSION = "1.1.0"
+DOCUMENTARY_SUMMARY_SCHEMA_VERSION = "1.5.0"
 
 
 def _load_optional(path: Path, label: str) -> dict[str, Any] | None:
@@ -326,7 +326,7 @@ def _base_result() -> dict[str, Any]:
         "available_actions": [],
         "required_inputs": [],
         "can_continue_partially": False,
-        "technical_gates": {},
+        "technical_gates": {"simulation_authorized": False},
         "summary": {
             "situation": "A pasta foi recebida e ainda precisa passar pela validação documental.",
             "completed": [],
@@ -768,6 +768,12 @@ def evaluate_planning_status(
         {
             "documentary_scope_reconciled": documentary_reconciled,
             "group_coverage_complete": group_complete,
+            "simulation_authorized": bool(
+                acquisition.get("gates", {}).get("simulation_authorized")
+                and revenue.get("gates", {}).get("simulation_authorized")
+                and reconciliation.get("gates", {}).get("simulation_authorized")
+                and counterparties_ready
+            ),
             "uc004_planning_authorized": False,
         }
     )
@@ -1132,7 +1138,7 @@ def _append_documentary_summary(lines: list[str], result: dict[str, Any]) -> Non
                 "",
                 "### Contrapartes e regime",
                 "",
-                "| Grupo | Situação | Contrapartes | Documentos | Valor documental |",
+                "| Grupo | Situação | Contrapartes | Documentos | Valor dos documentos |",
                 "|---|---|---:|---:|---:|",
             ]
         )
@@ -1161,6 +1167,23 @@ def _append_documentary_summary(lines: list[str], result: dict[str, Any]) -> Non
         lines.append(
             "Identificadores completos ficam somente nos artefatos locais autorizados; este resumo é agregado."
         )
+        supplier_entries = _mapping(suppliers.get("documentary_entries"))
+        supplier_purchase_documents = _mapping(
+            suppliers.get("purchase_context_documents")
+        )
+        supplier_purchase_items = _mapping(suppliers.get("purchase_context_items"))
+        if supplier_entries or supplier_purchase_documents or supplier_purchase_items:
+            lines.extend(
+                [
+                    "",
+                    "Escopos monetários dos fornecedores:",
+                    f"- Entradas documentais de contrapartes: {_summary_value(supplier_entries.get('document_total'))} ({_summary_value(supplier_entries.get('amount_basis'))}).",
+                    f"- Compras por documento: {_summary_value(supplier_purchase_documents.get('document_total'))} ({_summary_value(supplier_purchase_documents.get('amount_basis'))}).",
+                    f"- Itens `PURCHASE_CONTEXT`: {_summary_value(supplier_purchase_items.get('item_total'))} ({_summary_value(supplier_purchase_items.get('amount_basis'))}).",
+                    f"- Itens `PURCHASE_CONTEXT` elegíveis no UC-003: {_summary_value(supplier_purchase_items.get('eligible_item_total'))}.",
+                    "A população de contrapartes não equivale automaticamente à base de compras.",
+                ]
+            )
         product_mix = _mapping(suppliers.get("product_mix"))
         if product_mix:
             lines.extend(

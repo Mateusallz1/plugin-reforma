@@ -18,7 +18,7 @@ from .operation_classification import classify_product_item as _classify_product
 from .ruleset_integrity import verify_trusted_hash
 
 REVENUE_SCHEMA = "br.com.planejamento-reforma-tributaria/revenue-review"
-REVENUE_SCHEMA_VERSION = "1.4.0"
+REVENUE_SCHEMA_VERSION = "1.6.0"
 DECISION_FILE = Path("00_CONTROLE") / "classificacao-receitas.csv"
 PENDING_CLASSES = {
     "INVALID_CFOP_PENDING",
@@ -511,6 +511,19 @@ def review_revenue_folder(
         "analyst_rules_approved_at": analyst_rules["approved_at"],
         "analyst_rules_integrity": analyst_rules_integrity,
     }
+    uc003_revenue_execution_ready = bool(
+        ruleset_lock.get("cfop_snapshot_id")
+        and ruleset_lock.get("cfop_snapshot_sha256")
+        and ruleset_lock.get("cfop_integrity", {}).get("integrity_status") == "VERIFIED"
+        and ruleset_lock.get("analyst_ruleset_id")
+        and ruleset_lock.get("analyst_rules_sha256")
+        and ruleset_lock.get("analyst_rules_integrity", {}).get("integrity_status")
+        == "VERIFIED"
+    )
+    revenue_population_ready = not pending and not unexplained
+    simulation_authorized = bool(
+        uc003_revenue_execution_ready and revenue_population_ready
+    )
     result = {
         "schema": REVENUE_SCHEMA,
         "schema_version": REVENUE_SCHEMA_VERSION,
@@ -557,12 +570,13 @@ def review_revenue_folder(
         "decision_input": decision_summary,
         "ruleset_lock": ruleset_lock,
         "gates": {
-            "uc003_revenue_execution_ready": True,
+            "uc003_revenue_execution_ready": uc003_revenue_execution_ready,
             "revenue_review_required": bool(revenue_records),
             "cfop_classification_complete": not pending,
             "document_item_totals_explained": not unexplained,
-            "revenue_population_ready": not pending and not unexplained,
+            "revenue_population_ready": revenue_population_ready,
             "analyst_review_required": bool(pending or unexplained),
+            "simulation_authorized": simulation_authorized,
             "uc004_planning_authorized": False,
         },
         "limitations": [
@@ -630,6 +644,7 @@ def _report(result: dict[str, Any]) -> str:
             f"- Totais explicados: `{str(result['gates']['document_item_totals_explained']).lower()}`",
             f"- População de receita pronta: `{str(result['gates']['revenue_population_ready']).lower()}`",
             f"- Revisão do analista necessária: `{str(result['gates']['analyst_review_required']).lower()}`",
+            f"- Simulação do UC-004 autorizada: `{str(result['gates']['simulation_authorized']).lower()}`",
             f"- UC-004 autorizado: `{str(result['gates']['uc004_planning_authorized']).lower()}`",
             "",
             "## Limitações",

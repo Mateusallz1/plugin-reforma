@@ -8,7 +8,10 @@ Cada linha preserva:
 - `name_cnpj`: apresentação obrigatória no formato `NOME EMPRESA + CNPJ`;
 - `simples_status`: situação documental derivada do CRT dos documentos ou do
   snapshot autorizado. CRT ausente ou inválido fica como `REGIME_INDETERMINADO`;
-- `document_total`: total dos documentos do fornecedor;
+- `document_total`: total dos documentos de entrada do fornecedor, com base
+  `ALL_ENTRY_DOCUMENT_TOTAL`;
+- `purchase_context_item_total`: subtotal de itens `PURCHASE_CONTEXT` do
+  fornecedor, separado do total documental;
 - `product_total` e `share_of_portfolio_products`: valor dos produtos elegíveis e
   participação no total da competência;
 - `products`: agrupamento por código do produto, NCM e descrição, com quantidade,
@@ -18,6 +21,11 @@ O recorte inclui somente linhas `PRODUCT`, de entrada, elegíveis no UC-003 e co
 `purchase_operation_status=PURCHASE_CONTEXT`. Serviços, transportes, remessas e
 operações pendentes permanecem nos artefatos próprios e não entram no ranking de
 produtos.
+
+O resumo de fornecedores também publica, de forma agregada, as populações
+`documentary_entries`, `purchase_context_documents` e `purchase_context_items`.
+Cada bloco informa seu `amount_basis`; não se deve tratar `document_total`,
+`purchase_base` e `pending_base` como a mesma base monetária.
 
 O resumo público mantém somente totais por regime em `product_mix`. Nomes, CNPJs,
 descrições e a composição detalhada não devem ser copiados para o Git nem para a

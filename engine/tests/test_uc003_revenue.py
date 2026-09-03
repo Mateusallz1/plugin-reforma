@@ -105,6 +105,7 @@ def test_uc003b_reviews_revenue_deterministically_and_uses_document_totals(
     }
     assert first["gates"]["revenue_population_ready"] is True
     assert first["gates"]["analyst_review_required"] is False
+    assert first["gates"]["simulation_authorized"] is True
     assert first["gates"]["uc004_planning_authorized"] is False
     assert set(first["cfop_summary"]) == {"5102", "6102"}
     assert first["cfop_summary"]["5102"]["item_amount"] == "100.00"
@@ -179,6 +180,7 @@ def test_uc003b_treats_apurated_zero_as_ready_population(tmp_path: Path) -> None
     assert result["gates"]["revenue_population_ready"] is True
     assert result["gates"]["revenue_review_required"] is False
     assert result["gates"]["analyst_review_required"] is False
+    assert result["gates"]["simulation_authorized"] is True
     assert result["gates"]["uc004_planning_authorized"] is False
 
 

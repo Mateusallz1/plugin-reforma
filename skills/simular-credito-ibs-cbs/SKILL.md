@@ -14,6 +14,7 @@ estabelecimento nos artefatos locais.
 - UC-001 autorizado;
 - UC-002 e UC-003 concluídos com as saídas vigentes;
 - UC-003D com fornecedores e clientes apurados;
+- saídas de aquisições, receitas e conciliação com `simulation_authorized=true`;
 - PGDAS-D conciliado. Em carteira com matriz e filiais, a consolidação do grupo
   precisa estar completa para recomendar o modelo híbrido;
 - cenário de taxas aprovado pelo analista. O snapshot embarcado é somente uma
@@ -30,12 +31,17 @@ estabelecimento nos artefatos locais.
 
 - A receita-base é a receita PGDAS-D conciliada do período. O período não é uma
   média mensal: soma exatamente as competências selecionadas.
-- PGDAS-D maior que a receita XML gera `RECEITA_SEM_NOTA_FISCAL`. A diferença é
-  tributada no Simples da mesma forma que a receita declarada, sem benefício
-  fiscal; a alocação comercial como PF é apenas uma premissa para a análise de
-  exigência de crédito, sem afirmar que a pessoa física foi identificada.
+- PGDAS-D maior que a receita XML gera uma lacuna de suporte documental. Se o
+  estabelecimento não possui documentos no período, classifique-a como
+  `ESTABLISHMENT_DOCUMENTS_MISSING`; se possui documentos, mas não para a
+  atividade declarada, classifique-a como `DECLARED_WITHOUT_DOCUMENT_SUPPORT`.
+  Nenhum desses estados permite inferir cliente PF. A receita só entra em uma
+  categoria de pessoa física quando houver evidência explícita no cadastro ou
+  nos documentos.
 - XML maior que PGDAS-D mantém `PENDING_REVENUE_DIVERGENCE` e impede recomendação
-  estratégica até revisão.
+  estratégica até revisão. No consolidado, `xml_above_pgdas` soma essa direção
+  da divergência separadamente de `revenue_without_invoice`; nenhum dos lados é
+  descartado no rollup.
 - Clientes `REGIME_NORMAL` são a população que exige crédito integral. Simples,
   MEI, nanoempreendedor, PF, condomínios, órgãos públicos e governo ficam fora
   dessa população quando a classificação estiver evidenciada.
@@ -47,10 +53,30 @@ estabelecimento nos artefatos locais.
   híbrido significa IBS/CBS no regime regular e demais tributos no PGDAS-D.
 - O cenário inicial usa 9% para fornecedor normal confirmado, 1% para Simples e
   0% para MEI, nanoempreendedor, PF ou regime não confirmado. As taxas são
-  `SIMULATION_ONLY` e não substituem os valores de IBS/CBS documentados.
+  `SIMULATION_ONLY` e não substituem os valores de IBS/CBS documentados. O
+  JSON deve usar somente status reconhecidos; chave desconhecida, taxa vazia ou
+  status de fornecedor sem taxa causa erro explícito, nunca alíquota zero por
+  fallback.
 - Compras continuam demonstradas mesmo quando a base creditável é zero ou está
-  pendente. Natureza não aprovada, evidência legal incompleta e documento sem
-  suporte não geram crédito estimado.
+  pendente. No resumo de crédito, `documentary_purchase_total` é a soma de
+  documentos únicos (`UNIQUE_DOCUMENT_TOTAL`), `purchase_base` é o subtotal de
+  itens `PURCHASE_CONTEXT` e `pending_base` é somente a parcela elegível ainda
+  pendente (`PURCHASE_CONTEXT_ELIGIBLE_PENDING_ITEM_SUBTOTAL`).
+- `non_purchase_entry_total` e `ineligible_purchase_context_base` ficam
+  separados para impedir que entradas fora de compras ou itens inelegíveis
+  pareçam fazer parte da mesma base. Natureza não aprovada, evidência legal
+  incompleta e documento sem suporte não geram crédito estimado.
+- O arquivo `acquisition-items.local.jsonl` não contém operações fora de
+  compras; por isso não existe uma base monetária por item para
+  `NON_PURCHASE_ENTRY`. Esse valor só é publicado pelo total documental
+  `non_purchase_entry_total`.
+- `simulation_authorized` libera somente esta simulação operacional. O gate
+  `uc004_planning_authorized` permanece separado e falso enquanto não houver
+  autorização fiscal/legal do planejamento.
+- No consolidado por carteira, PGDAS-D, receita documental e divergências só
+  entram no rollup quando todos os estabelecimentos da competência estão em
+  `reconciliation_mode=ESTABLISHMENT`. Competências em `GROUP` ficam nos
+  detalhes e são listadas em `reconciliation_rollup_skipped_periods`.
 
 ## Saídas
 

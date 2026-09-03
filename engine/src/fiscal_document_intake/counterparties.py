@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 from xml.etree.ElementTree import ParseError
 
-from defusedxml import ElementTree as SafeET
 from defusedxml.common import DefusedXmlException
 
 from .core import (
@@ -20,7 +19,7 @@ from .core import (
     _format_decimal,
     _local_name,
     _parse_decimal,
-    _parse_xml_file,
+    _parse_xml_file_with_root,
     _raw_files,
     _safe_relative_files,
 )
@@ -28,7 +27,7 @@ from .core import (
 COUNTERPARTY_SCHEMA = (
     "br.com.planejamento-reforma-tributaria/counterparty-regime-review"
 )
-COUNTERPARTY_SCHEMA_VERSION = "1.2.0"
+COUNTERPARTY_SCHEMA_VERSION = "1.5.0"
 SUPPLIER_LOCAL_FILE = "fornecedores-regime.local.jsonl"
 SUPPLIER_PRODUCTS_LOCAL_FILE = "fornecedores-produtos.local.jsonl"
 SUPPLIER_PRODUCTS_REPORT_FILE = "fornecedores-produtos.local.md"
@@ -38,6 +37,7 @@ CUSTOMER_SUMMARY_FILE = "clientes-cnpj-regime-summary.json"
 MEETING_REPORT_FILE = "contrapartes-regime.local.md"
 DEFAULT_REGISTRY = Path("00_CONTROLE") / "simples-registry.local.jsonl"
 PERIOD_PATTERN = re.compile(r"20\d{2}-(0[1-9]|1[0-2])")
+SIMPLES_FAMILY_STATUSES = {"OPTANTE_SIMPLES", "MEI"}
 
 
 def _digits(value: Any) -> str:
@@ -148,17 +148,82 @@ def _nfe_crt(root: Any, document_key: str) -> str | None:
     return None
 
 
+def _document_xml_scope(root: Any, document_type: str, document_key: str) -> Any | None:
+    normalized_key = _digits(document_key)
+    if document_type in {"NFE", "NFCE"}:
+        matches = []
+        for nfe in root.iter():
+            if _local_name(nfe.tag).casefold() != "nfe":
+                continue
+            info = next(
+                (
+                    candidate
+                    for candidate in nfe.iter()
+                    if _local_name(candidate.tag).casefold() == "infnfe"
+                ),
+                None,
+            )
+            if info is None:
+                continue
+            candidate_key = _digits(info.attrib.get("Id", ""))
+            if normalized_key:
+                if candidate_key == normalized_key:
+                    return info
+            else:
+                matches.append(info)
+        return matches[0] if len(matches) == 1 else None
+    if document_type == "CTE":
+        matches = []
+        for cte in root.iter():
+            if _local_name(cte.tag).casefold() != "cte":
+                continue
+            info = next(
+                (
+                    candidate
+                    for candidate in cte.iter()
+                    if _local_name(candidate.tag).casefold() == "infcte"
+                ),
+                None,
+            )
+            if info is None:
+                continue
+            candidate_key = _digits(info.attrib.get("Id", ""))
+            if normalized_key:
+                if candidate_key == normalized_key:
+                    return cte
+            else:
+                matches.append(cte)
+        return matches[0] if len(matches) == 1 else None
+    if document_type == "NFSE":
+        notes = [
+            candidate
+            for candidate in root.iter()
+            if _local_name(candidate.tag).casefold() == "infnfse"
+        ]
+        return notes[0] if len(notes) == 1 else None
+    return None
+
+
 def _generic_issuer_regime(
-    root: Any, document_type: str
+    root: Any, document_type: str, document_key: str = ""
 ) -> tuple[str | None, str | None]:
+    scoped_root = _document_xml_scope(root, document_type, document_key)
+    if scoped_root is None:
+        return None, None
     if document_type in {"NFE", "NFCE", "CTE"}:
-        for candidate in root.iter():
-            if _local_name(candidate.tag) in {"emit", "Emit"}:
-                crt = _direct_text(candidate, "CRT")
-                if crt:
-                    return crt, "DOCUMENT_CRT"
+        emit = next(
+            (
+                candidate
+                for candidate in scoped_root.iter()
+                if _local_name(candidate.tag).casefold() == "emit"
+            ),
+            None,
+        )
+        crt = _direct_text(emit, "CRT")
+        if crt:
+            return crt, "DOCUMENT_CRT"
     optante = _text(
-        root,
+        scoped_root,
         {"OptanteSimplesNacional", "OptanteSimples", "OptantePeloSimples"},
     )
     if optante:
@@ -170,16 +235,26 @@ def _generic_issuer_regime(
     return None, None
 
 
-def _document_regime_evidence(
-    folder: Path, documents: dict[str, dict[str, Any]]
-) -> dict[str, list[tuple[str, str]]]:
-    evidence: dict[str, list[tuple[str, str]]] = defaultdict(list)
+def _load_xml_contexts(
+    folder: Path,
+) -> list[tuple[list[dict[str, Any]], Any]]:
+    contexts: list[tuple[list[dict[str, Any]], Any]] = []
     for path in _xml_paths(folder):
         try:
-            parsed, _, _ = _parse_xml_file(path)
-            root = SafeET.parse(path).getroot()
+            parsed, _, _, root = _parse_xml_file_with_root(path)
         except (OSError, ParseError, DefusedXmlException, ValidationError):
             continue
+        if root is not None:
+            contexts.append((parsed, root))
+    return contexts
+
+
+def _document_regime_evidence(
+    contexts: list[tuple[list[dict[str, Any]], Any]],
+    documents: dict[str, dict[str, Any]],
+) -> dict[str, list[tuple[str, str]]]:
+    evidence: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for parsed, root in contexts:
         for document in parsed:
             selected = documents.get(document.get("document_ref"))
             if selected is None:
@@ -191,30 +266,21 @@ def _document_regime_evidence(
                 source = "DOCUMENT_CRT" if value else None
             if value is None:
                 value, source = _generic_issuer_regime(
-                    root, str(selected.get("document_type") or "")
+                    root,
+                    str(selected.get("document_type") or ""),
+                    str(document.get("document_key") or ""),
                 )
             if value and source:
                 evidence[selected["document_ref"]].append((value, source))
-        if len(parsed) == 1:
-            selected = documents.get(parsed[0].get("document_ref"))
-            if selected is not None and not evidence.get(selected["document_ref"]):
-                value, source = _generic_issuer_regime(
-                    root, str(selected.get("document_type") or "")
-                )
-                if value and source:
-                    evidence[selected["document_ref"]].append((value, source))
     return evidence
 
 
 def _document_party_details(
-    folder: Path, documents: dict[str, dict[str, Any]]
+    contexts: list[tuple[list[dict[str, Any]], Any]],
+    documents: dict[str, dict[str, Any]],
 ) -> dict[str, dict[str, str]]:
     parties: dict[str, dict[str, str]] = {}
-    for path in _xml_paths(folder):
-        try:
-            parsed, _, _ = _parse_xml_file(path)
-        except (OSError, ValidationError):
-            continue
+    for parsed, _ in contexts:
         for document in parsed:
             document_ref = document.get("document_ref")
             if document_ref not in documents:
@@ -273,11 +339,111 @@ def _product_key(record: dict[str, Any]) -> tuple[str, str, str]:
     )
 
 
+def _supplier_purchase_context_bases(
+    supplier_inputs: list[dict[str, Any]],
+    acquisition_items: list[dict[str, Any]],
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """Separate entry-document totals from itemized purchase populations."""
+    supplier_by_document = {
+        str(record["document_ref"]): _digits(record.get("party_id"))
+        for record in supplier_inputs
+        if record.get("document_ref") and len(_digits(record.get("party_id"))) == 14
+    }
+    entry_documents = {
+        str(record["document_ref"]): _parse_decimal(record.get("gross_amount"))
+        or Decimal(0)
+        for record in supplier_inputs
+        if record.get("document_ref") and len(_digits(record.get("party_id"))) == 14
+    }
+    by_supplier: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {
+            "item_count": 0,
+            "item_total": Decimal(0),
+            "eligible_item_count": 0,
+            "eligible_item_total": Decimal(0),
+            "document_refs": set(),
+        }
+    )
+    for item in acquisition_items:
+        if (
+            item.get("direction") != "ENTRADA"
+            or item.get("purchase_operation_status") != "PURCHASE_CONTEXT"
+        ):
+            continue
+        document_ref = str(item.get("document_ref") or "")
+        supplier_cnpj = supplier_by_document.get(document_ref)
+        if not supplier_cnpj:
+            continue
+        entry = by_supplier[supplier_cnpj]
+        amount = _parse_decimal(item.get("gross_amount")) or Decimal(0)
+        entry["item_count"] += 1
+        entry["item_total"] += amount
+        entry["document_refs"].add(document_ref)
+        if item.get("eligible_for_uc003") is True:
+            entry["eligible_item_count"] += 1
+            entry["eligible_item_total"] += amount
+
+    for entry in by_supplier.values():
+        entry["document_count"] = len(entry["document_refs"])
+        entry["document_total"] = sum(
+            (
+                entry_documents.get(document_ref, Decimal(0))
+                for document_ref in entry["document_refs"]
+            ),
+            Decimal(0),
+        )
+
+    entry_document_total = sum(entry_documents.values(), Decimal(0))
+    all_purchase_documents = {
+        document_ref
+        for entry in by_supplier.values()
+        for document_ref in entry["document_refs"]
+    }
+    summary = {
+        "documentary_entries": {
+            "amount_basis": "ALL_ENTRY_DOCUMENT_TOTAL",
+            "document_count": len(entry_documents),
+            "document_total": _money(entry_document_total),
+        },
+        "purchase_context_documents": {
+            "amount_basis": "UNIQUE_DOCUMENT_TOTAL_PURCHASE_CONTEXT",
+            "document_count": len(all_purchase_documents),
+            "document_total": _money(
+                sum(
+                    (
+                        entry_documents.get(document_ref, Decimal(0))
+                        for document_ref in all_purchase_documents
+                    ),
+                    Decimal(0),
+                )
+            ),
+        },
+        "purchase_context_items": {
+            "amount_basis": "PURCHASE_CONTEXT_ITEM_SUBTOTAL",
+            "item_count": sum(entry["item_count"] for entry in by_supplier.values()),
+            "item_total": _money(
+                sum((entry["item_total"] for entry in by_supplier.values()), Decimal(0))
+            ),
+            "eligible_item_count": sum(
+                entry["eligible_item_count"] for entry in by_supplier.values()
+            ),
+            "eligible_item_total": _money(
+                sum(
+                    (entry["eligible_item_total"] for entry in by_supplier.values()),
+                    Decimal(0),
+                )
+            ),
+        },
+    }
+    return by_supplier, summary
+
+
 def _supplier_product_mix(
     suppliers: list[dict[str, Any]],
     supplier_inputs: list[dict[str, Any]],
     acquisition_items: list[dict[str, Any]],
     product_basis_status: str,
+    purchase_context_by_supplier: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     supplier_by_document = {
         record["document_ref"]: _digits(record.get("party_id"))
@@ -330,6 +496,7 @@ def _supplier_product_mix(
     product_mix: list[dict[str, Any]] = []
     for supplier in suppliers:
         cnpj = supplier["cnpj"]
+        purchase_context = (purchase_context_by_supplier or {}).get(cnpj, {})
         products = []
         for product in sorted(
             grouped.get(cnpj, {}).values(),
@@ -371,6 +538,11 @@ def _supplier_product_mix(
                 "simples_status": supplier["simples_status"],
                 "document_count": supplier["document_count"],
                 "document_total": supplier["document_total"],
+                "document_total_basis": "ALL_ENTRY_DOCUMENT_TOTAL",
+                "purchase_context_item_count": purchase_context.get("item_count", 0),
+                "purchase_context_item_total": _money(
+                    purchase_context.get("item_total", Decimal(0))
+                ),
                 "product_line_count": sum(item["item_count"] for item in products),
                 "product_distinct_count": len(products),
                 "product_total": _money(supplier_total),
@@ -521,6 +693,27 @@ def _crt_status(value: str) -> str | None:
     return "REGIME_INDETERMINADO"
 
 
+def _compatible_regime_statuses(
+    document_status: str, registry_status: str | None
+) -> bool:
+    if registry_status is None:
+        return False
+    return (
+        document_status == registry_status
+        or {
+            document_status,
+            registry_status,
+        }
+        == SIMPLES_FAMILY_STATUSES
+    )
+
+
+def _preferred_regime_status(document_status: str, registry_status: str) -> str:
+    if "MEI" in {document_status, registry_status}:
+        return "MEI"
+    return document_status
+
+
 def _aggregate_party(
     records: list[dict[str, Any]],
     *,
@@ -592,6 +785,8 @@ def _aggregate_party(
             status = "REGIME_INDETERMINADO"
         elif len(document_statuses) > 1:
             status = "DIVERGENTE_NO_PERIODO"
+        elif _compatible_regime_statuses(document_status, registry_status):
+            status = _preferred_regime_status(document_status, registry_status)
         elif registry_status and document_status not in {"UNKNOWN", registry_status}:
             status = "EVIDENCIA_CONFLITANTE"
         elif registry_status:
@@ -654,8 +849,9 @@ def review_counterparties_folder(
         for record in validation.get("documents", {}).get("records", [])
         if record.get("included") and record.get("authorized_for_planning")
     }
-    evidence = _document_regime_evidence(base, documents)
-    parties = _document_party_details(base, documents)
+    xml_contexts = _load_xml_contexts(base)
+    evidence = _document_regime_evidence(xml_contexts, documents)
+    parties = _document_party_details(xml_contexts, documents)
     registry = _load_registry(base, simples_registry_path, period)
     supplier_inputs: list[dict[str, Any]] = []
     customer_inputs: list[dict[str, Any]] = []
@@ -714,11 +910,15 @@ def review_counterparties_folder(
         document_evidence={},
     )
     acquisition_items, product_basis_status = _load_acquisition_items(base)
+    purchase_context_by_supplier, purchase_basis_summary = (
+        _supplier_purchase_context_bases(supplier_inputs, acquisition_items)
+    )
     supplier_products, product_mix_summary = _supplier_product_mix(
         suppliers,
         supplier_inputs,
         acquisition_items,
         product_basis_status,
+        purchase_context_by_supplier,
     )
 
     def public_by_status(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -753,6 +953,7 @@ def review_counterparties_folder(
         "competence": period,
         "supplier_count": len(suppliers),
         "by_simples_status": public_by_status(suppliers),
+        **purchase_basis_summary,
         "product_mix": product_mix_summary,
         "registry_status": "LOADED" if registry else "ABSENT",
     }
@@ -795,7 +996,7 @@ def _meeting_report(result: dict[str, Any]) -> str:
         "",
         "## Fornecedores",
         "",
-        "| Empresa + CNPJ | Simples | Documentos | Valor documental |",
+        "| Empresa + CNPJ | Simples | Documentos de entrada | Valor dos documentos de entrada |",
         "|---|---|---:|---:|",
     ]
     for item in result["_private_suppliers"]:
@@ -807,8 +1008,8 @@ def _meeting_report(result: dict[str, Any]) -> str:
             "",
             "## Clientes CNPJ",
             "",
-            "| Empresa + CNPJ | Simples | Documentos | Valor documental |",
-            "|---|---|---|---:|---:|",
+            "| Empresa + CNPJ | Simples | Documentos de saída | Valor dos documentos de saída |",
+            "|---|---|---:|---:|",
         ]
     )
     for item in result["_private_customers"]:
@@ -822,6 +1023,14 @@ def _meeting_report(result: dict[str, Any]) -> str:
             "",
             f"- Quantidade de vendas para CPF: {result['customer_summary']['sales_to_individuals']['document_count']}",
             f"- Valor das vendas para CPF: {result['customer_summary']['sales_to_individuals']['document_total']}",
+            "",
+            "## Escopos monetários dos fornecedores",
+            "",
+            "- O valor dos documentos de entrada é uma população de contrapartes e não equivale, por si só, ao total de compras.",
+            f"- Entradas documentais: {result['supplier_summary']['documentary_entries']['document_total']} ({result['supplier_summary']['documentary_entries']['amount_basis']}).",
+            f"- Compras por documento: {result['supplier_summary']['purchase_context_documents']['document_total']} ({result['supplier_summary']['purchase_context_documents']['amount_basis']}).",
+            f"- Itens `PURCHASE_CONTEXT`: {result['supplier_summary']['purchase_context_items']['item_total']} ({result['supplier_summary']['purchase_context_items']['amount_basis']}).",
+            f"- Itens `PURCHASE_CONTEXT` elegíveis no UC-003: {result['supplier_summary']['purchase_context_items']['eligible_item_total']}.",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -844,7 +1053,8 @@ def _supplier_products_report(result: dict[str, Any]) -> str:
                 f"## {supplier['name_cnpj']}",
                 "",
                 f"- Regime documental: `{supplier['simples_status']}`",
-                f"- Valor documental do fornecedor: {supplier['document_total']}",
+                f"- Valor dos documentos de entrada do fornecedor: {supplier['document_total']}",
+                f"- Valor `PURCHASE_CONTEXT` por itens: {supplier['purchase_context_item_total']}",
                 f"- Valor dos produtos: {supplier['product_total']} ({supplier['share_of_portfolio_products']}% do total)",
                 f"- Linhas de produto: {supplier['product_line_count']}; produtos distintos: {supplier['product_distinct_count']}",
                 "",

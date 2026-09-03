@@ -23,7 +23,7 @@ from .operation_classification import classify_acquisition_product_item_with_rea
 from .ruleset_integrity import verify_trusted_hash
 
 ACQUISITION_SCHEMA = "br.com.planejamento-reforma-tributaria/acquisition-review"
-ACQUISITION_SCHEMA_VERSION = "1.5.0"
+ACQUISITION_SCHEMA_VERSION = "1.7.0"
 DECISION_FILE = Path("00_CONTROLE") / "classificacao-aquisicoes.csv"
 ACQUISITION_CATEGORIES = {
     "PRODUCT": "PURCHASE_GOODS",
@@ -620,6 +620,19 @@ def review_acquisitions_folder(
     }
     if cfop_lock is not None:
         ruleset_lock["cfop"] = cfop_lock
+    uc003_execution_ready = bool(
+        ruleset_lock.get("snapshot_id")
+        and ruleset_lock.get("snapshot_sha256")
+        and ruleset_lock.get("integrity_status") == "VERIFIED"
+    )
+    operational_classification_complete = all(
+        record.get("acquisition_category")
+        in {"PURCHASE_GOODS", "PURCHASE_SERVICES", "PURCHASE_TRANSPORT"}
+        for record in acquisition_records
+    )
+    simulation_authorized = bool(
+        uc003_execution_ready and operational_classification_complete
+    )
     documentary_totals = _documentary_totals(validation_records, document_statuses)
     excluded_operation_summary = _excluded_operation_summary(
         validation_records, document_statuses, product_operation_reasons_by_document
@@ -671,13 +684,14 @@ def review_acquisitions_folder(
         "decision_input": decision_summary,
         "ruleset_lock": ruleset_lock,
         "gates": {
-            "uc003_execution_ready": True,
+            "uc003_execution_ready": uc003_execution_ready,
             "acquisition_review_required": bool(acquisition_records),
-            "operational_classification_complete": True,
+            "operational_classification_complete": operational_classification_complete,
             "acquisition_review_complete": bool(acquisition_records)
             and not pending_records,
             "legal_evidence_complete": bool(acquisition_records) and not legal_pending,
             "analyst_review_required": bool(pending_records or legal_pending),
+            "simulation_authorized": simulation_authorized,
             "uc004_planning_authorized": False,
         },
         "limitations": [
@@ -781,6 +795,7 @@ def _markdown_report(result: dict[str, Any]) -> str:
             f"- Revisão de aquisições completa: `{str(result['gates']['acquisition_review_complete']).lower()}`",
             f"- Evidência legal completa: `{str(result['gates']['legal_evidence_complete']).lower()}`",
             f"- Revisão do analista necessária: `{str(result['gates']['analyst_review_required']).lower()}`",
+            f"- Simulação do UC-004 autorizada: `{str(result['gates']['simulation_authorized']).lower()}`",
             f"- UC-004 autorizado: `{str(result['gates']['uc004_planning_authorized']).lower()}`",
             "",
             "## Limitações",

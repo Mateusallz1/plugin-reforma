@@ -147,6 +147,15 @@ são agrupados em `06_REVISAO_RECEITAS/clientes-cnpj-regime.local.jsonl` e podem
 ser resolvidos por um snapshot local JSONL informado ao launcher. Vendas para CPF
 são apenas contadas por documento único; nenhum CPF é persistido.
 
+CRT `4` identifica `MEI`. Esse status é compatível com um registro de
+`OPTANTE_SIMPLES`, sem gerar conflito de evidências; quando o CRT for mais
+específico, `MEI` é preservado.
+
+No UC-003D, cada XML é parseado uma única vez e o contexto normalizado é
+reutilizado na apuração de partes e de regime. O fallback de CRT é limitado ao
+documento identificado pela chave fiscal; em arquivos com múltiplos documentos,
+não escolhe o primeiro emitente da raiz.
+
 O mesmo UC-003D grava `fornecedores-produtos.local.jsonl`, com uma linha por
 fornecedor e competência. Cada linha usa a convenção `NOME EMPRESA + CNPJ`,
 separa `OPTANTE_SIMPLES`, `MEI`, `NAO_OPTANTE_SIMPLES` e `REGIME_INDETERMINADO` e detalha os produtos
@@ -159,16 +168,40 @@ regime. Com `-MeetingReport`, o analista pode solicitar também o relatório loc
 
 O UC-004 executa somente depois das revisões operacionais e da conciliação do
 PGDAS-D. Usa a receita PGDAS-D do período selecionado, calcula a linha de corte
-de 20% para clientes de regime normal e trata a diferença positiva PGDAS-D × XML
-como `RECEITA_SEM_NOTA_FISCAL`: ela é tributada no Simples da mesma forma que a
-receita declarada e não recebe benefício fiscal. A alocação comercial como PF é
-apenas uma premissa do cenário.
+de 20% para clientes de regime normal e preserva a diferença positiva PGDAS-D ×
+XML como lacuna de suporte documental. Estabelecimento sem documentos recebe
+`ESTABLISHMENT_DOCUMENTS_MISSING`; atividade declarada sem suporte em
+estabelecimento coberto recebe `DECLARED_WITHOUT_DOCUMENT_SUPPORT`. A categoria
+PF só é usada com evidência explícita de pessoa física.
 
 As compras são separadas em base creditável, pendente e excluída. O cenário
 inicial adota 9% para fornecedor normal confirmado, 1% para Simples e 0% para
 MEI, nanoempreendedor, PF e regime indeterminado. Todas essas taxas são
 `SIMULATION_ONLY`, não direito legal a crédito. O modelo híbrido significa IBS e
 CBS no regime regular, mantendo os demais tributos no PGDAS-D.
+
+O cenário rejeita chaves de status desconhecidas, taxas vazias e status de
+fornecedor sem taxa configurada; não há fallback silencioso para alíquota zero.
+
+Operações fora de compras não são reconstruídas a partir dos itens de aquisição:
+o UC-003 publica apenas o total documental `non_purchase_entry_total`, sem uma
+falsa base por item igual a zero.
+
+O UC-004 consome o gate `simulation_authorized` das saídas operacionais. Esse
+gate libera apenas a simulação; `uc004_planning_authorized` continua reservado
+à autorização fiscal/legal e permanece independente.
+
+Os valores monetários preservam a população e o critério de soma: entradas de
+contrapartes (`ALL_ENTRY_DOCUMENT_TOTAL`), compras por documento único
+(`UNIQUE_DOCUMENT_TOTAL`), subtotal de itens `PURCHASE_CONTEXT` e base pendente
+elegível (`PURCHASE_CONTEXT_ELIGIBLE_PENDING_ITEM_SUBTOTAL`) são campos distintos.
+Uma comparação só é válida entre valores com o mesmo `amount_basis`.
+Na conciliação consolidada, `revenue_without_invoice` e `xml_above_pgdas`
+também permanecem como direções independentes da divergência; nenhum lado é
+descartado.
+O rollup da carteira só consolida uma competência quando todos os seus
+estabelecimentos estão em `reconciliation_mode=ESTABLISHMENT`; competências em
+modo `GROUP` permanecem detalhadas e são marcadas como não consolidadas.
 
 Quando executado diretamente, o UC-003D usa `00_CONTROLE/escopo.json` para
 identificar os CNPJs próprios. No processamento de carteira, usa a identidade

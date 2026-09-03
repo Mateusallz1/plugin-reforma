@@ -115,17 +115,25 @@ O resumo público contém somente totais, percentuais, cenários e gates. Os
 artefatos locais podem conter `NOME EMPRESA + CNPJ`, produtos e valores por
 fornecedor; eles são confidenciais.
 
+Ao comparar valores de compras, confira sempre o `amount_basis`: contrapartes
+usa entradas documentais, enquanto o planejamento distingue compras por
+documento, subtotal `PURCHASE_CONTEXT` por item e base pendente elegível.
+
 ## Regras do UC-004
 
 - A receita-base é a soma da receita PGDAS-D conciliada no período selecionado.
 - A linha de corte é `20%` dessa receita.
+- A simulação só é executada quando as saídas operacionais trazem
+  `simulation_authorized=true`; isso não autoriza planejamento fiscal/legal.
 - Clientes de regime normal compõem a população que exige crédito integral.
 - Simples, MEI, nanoempreendedor, PF, condomínios, órgãos públicos e governo
   ficam fora dessa população quando a classificação estiver evidenciada.
-- Se PGDAS-D for maior que XML, a diferença recebe o nome técnico
-  `RECEITA_SEM_NOTA_FISCAL`: é tributada no Simples como receita declarada e
-  não recebe benefício fiscal. A indicação de PF é apenas uma premissa de
-  segmentação, não uma identificação comprovada.
+- Se PGDAS-D for maior que XML, a diferença permanece como lacuna de suporte
+  documental. Estabelecimento sem documentos recebe
+  `ESTABLISHMENT_DOCUMENTS_MISSING`; atividade declarada sem suporte no
+  estabelecimento coberto recebe `DECLARED_WITHOUT_DOCUMENT_SUPPORT`. Nenhum
+  desses estados permite inferir cliente PF; essa categoria exige evidência
+  explícita no cadastro ou nos documentos.
 - Se XML for maior que PGDAS-D, a recomendação fica
   `PENDING_REVENUE_DIVERGENCE`.
 - O cenário atual estima 9% para fornecedor normal confirmado, 1% para Simples

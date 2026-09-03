@@ -15,7 +15,7 @@ from .simple_reconciliation import SIMPLE_RECONCILIATION_SCHEMA_VERSION
 CREDIT_PLANNING_SCHEMA = (
     "br.com.planejamento-reforma-tributaria/credit-planning-simulation"
 )
-CREDIT_PLANNING_SCHEMA_VERSION = "1.1.0"
+CREDIT_PLANNING_SCHEMA_VERSION = "1.10.0"
 DEFAULT_SCENARIO = {
     "scenario_id": "ANALYST_RATES_9_1_V1",
     "mode": "SIMULATION_ONLY",
@@ -27,9 +27,11 @@ DEFAULT_SCENARIO = {
         "PESSOA_FISICA": "0.0000",
         "REGIME_INDETERMINADO": "0.0000",
         "DIVERGENTE_NO_PERIODO": "0.0000",
+        "EVIDENCIA_CONFLITANTE": "0.0000",
         "UNKNOWN": "0.0000",
     },
 }
+SCENARIO_RATE_STATUSES = frozenset(DEFAULT_SCENARIO["rates"])
 NON_DEMANDING_CUSTOMER_STATUSES = {
     "OPTANTE_SIMPLES",
     "MEI",
@@ -84,6 +86,11 @@ def _load_jsonl(path: Path, *, optional: bool = False) -> list[dict[str, Any]]:
     return records
 
 
+def _require_simulation_authorized(summary: dict[str, Any], label: str) -> None:
+    if summary.get("gates", {}).get("simulation_authorized") is not True:
+        raise ValidationError(f"{label} não autorizou a simulação do UC-004")
+
+
 def _decimal(value: Any) -> Decimal:
     if value is None or str(value).strip() == "":
         return Decimal(0)
@@ -95,6 +102,17 @@ def _decimal(value: Any) -> Decimal:
 
 def _money(value: Decimal) -> str:
     return format(value.quantize(Decimal("0.01")), "f")
+
+
+def _optional_money(value: Any) -> str | None:
+    if value is None or str(value).strip() == "":
+        return None
+    return _money(_decimal(value))
+
+
+def _rate(value: Decimal) -> str:
+    """Format a scenario rate without applying monetary quantization."""
+    return format(value, "f")
 
 
 def _quantity(value: Decimal) -> str:
@@ -122,7 +140,20 @@ def _read_scenario(path: Path | str | None) -> dict[str, Any]:
         )
     normalized_rates: dict[str, str] = {}
     for status, rate in rates.items():
-        normalized_rates[str(status)] = _money(_decimal(rate))
+        normalized_status = str(status).strip().upper()
+        if normalized_status not in SCENARIO_RATE_STATUSES:
+            raise ValidationError(
+                f"O cenário possui status de taxa desconhecido: {normalized_status}"
+            )
+        if normalized_status in normalized_rates:
+            raise ValidationError(
+                f"O cenário possui status de taxa duplicado: {normalized_status}"
+            )
+        if rate is None or str(rate).strip() == "":
+            raise ValidationError(
+                f"A taxa do cenário para {normalized_status} deve ser decimal"
+            )
+        normalized_rates[normalized_status] = _rate(_decimal(rate))
     return {**scenario, "rates": normalized_rates}
 
 
@@ -135,6 +166,22 @@ def _period_folders(root: Path) -> list[Path]:
         if path.is_file()
     }
     return sorted(folders, key=lambda item: str(item).casefold())
+
+
+def _establishment_refs(root: Path) -> set[str]:
+    """Return the distinct establishments represented by processed periods."""
+    refs: set[str] = set()
+    for folder in _period_folders(root):
+        summary = _load_json(
+            folder / "03_SAIDAS" / "validation-result.json",
+            "03_SAIDAS/validation-result.json",
+        )
+        establishment_ref = str(
+            summary.get("scope", {}).get("establishment_ref") or ""
+        ).strip()
+        if establishment_ref:
+            refs.add(establishment_ref)
+    return refs
 
 
 def _load_period_inputs(folder: Path) -> dict[str, Any]:
@@ -180,6 +227,8 @@ def _load_period_inputs(folder: Path) -> dict[str, Any]:
         raise ValidationError("UC-002 não autorizou a revisão de aquisições")
     if acquisition.get("use_case") != "UC-003" or revenue.get("use_case") != "UC-003":
         raise ValidationError("Saídas de aquisições e receitas não pertencem ao UC-003")
+    _require_simulation_authorized(acquisition, "A revisão de aquisições")
+    _require_simulation_authorized(revenue, "A revisão de receitas")
     period = str(validation.get("scope", {}).get("period") or "")
     if not period:
         raise ValidationError("A competência não foi informada no escopo")
@@ -200,10 +249,10 @@ def _reconciliation_for_period(
     folder: Path, portfolio_root: Path | None, period: str
 ) -> tuple[dict[str, Any] | None, str]:
     is_multi_establishment_portfolio = bool(
-        portfolio_root is not None and len(_period_folders(portfolio_root)) > 1
+        portfolio_root is not None and len(_establishment_refs(portfolio_root)) > 1
     )
     candidates: list[tuple[Path, str]] = []
-    if portfolio_root is not None:
+    if portfolio_root is not None and is_multi_establishment_portfolio:
         candidates.append(
             (
                 portfolio_root
@@ -230,8 +279,47 @@ def _reconciliation_for_period(
                 raise ValidationError(
                     "A conciliação do PGDAS-D não pertence à versão vigente"
                 )
+            _require_simulation_authorized(summary, "A conciliação do PGDAS-D")
             return summary, mode
     return None, "GROUP_MISSING" if is_multi_establishment_portfolio else "MISSING"
+
+
+def _revenue_has_documents(revenue_summary: dict[str, Any]) -> bool:
+    reviewed_documents = revenue_summary.get("reviewed_documents")
+    if reviewed_documents is not None:
+        return int(reviewed_documents) > 0
+    return revenue_summary.get("status") != "REVENUE_REVIEW_NO_DOCUMENT"
+
+
+def _reconciliation_for_exposure(
+    folder: Path,
+    reconciliation: dict[str, Any] | None,
+    reconciliation_mode: str,
+) -> tuple[dict[str, Any] | None, str]:
+    if reconciliation_mode != "GROUP":
+        return reconciliation, reconciliation_mode
+    path = folder / "07_CONCILIACAO_SIMPLES" / "simple-reconciliation-summary.json"
+    if not path.is_file():
+        return reconciliation, reconciliation_mode
+    summary = _load_json(path, path.name)
+    if summary.get("schema_version") != SIMPLE_RECONCILIATION_SCHEMA_VERSION:
+        raise ValidationError("A conciliação individual não pertence à versão vigente")
+    _require_simulation_authorized(summary, "A conciliação individual")
+    return summary, "ESTABLISHMENT"
+
+
+def _reconciliation_is_consolidated(
+    reconciliation: dict[str, Any] | None, reconciliation_mode: str
+) -> bool:
+    if reconciliation is None:
+        return False
+    gates = reconciliation.get("gates", {})
+    documentary_scope_reconciled = bool(gates.get("documentary_scope_reconciled"))
+    if reconciliation_mode == "GROUP":
+        return (
+            bool(gates.get("group_coverage_complete")) and documentary_scope_reconciled
+        )
+    return documentary_scope_reconciled
 
 
 def _customer_profile(row: dict[str, Any]) -> str:
@@ -269,6 +357,7 @@ def _supplier_credit_rows(
                 "creditable_base": Decimal(0),
                 "pending_base": Decimal(0),
                 "excluded_base": Decimal(0),
+                "ineligible_purchase_context_base": Decimal(0),
                 "item_count": 0,
             },
         )
@@ -280,6 +369,7 @@ def _supplier_credit_rows(
         entry["item_count"] += 1
         if item.get("eligible_for_uc003") is not True:
             entry["excluded_base"] += amount
+            entry["ineligible_purchase_context_base"] += amount
         elif (
             item.get("nature_status") != "ANALYST_APPROVED"
             or item.get("legal_evidence_status") != "CONFIRMED_DECLARED"
@@ -297,6 +387,8 @@ def _supplier_credit_rows(
             "creditable_base": Decimal(0),
             "pending_base": Decimal(0),
             "estimated_credit": Decimal(0),
+            "excluded_base": Decimal(0),
+            "ineligible_purchase_context_base": Decimal(0),
         }
     )
     for entry in sorted(
@@ -304,7 +396,11 @@ def _supplier_credit_rows(
     ):
         supplier = entry["supplier"]
         status = str(supplier.get("simples_status") or "REGIME_INDETERMINADO")
-        rate = _decimal(scenario["rates"].get(status, "0.00"))
+        if status not in scenario["rates"]:
+            raise ValidationError(
+                f"O cenário não possui taxa para o status do fornecedor: {status}"
+            )
+        rate = _decimal(scenario["rates"][status])
         creditable = entry["creditable_base"]
         estimated = creditable * rate
         if status in {"REGIME_INDETERMINADO", "UNKNOWN", "DIVERGENTE_NO_PERIODO"}:
@@ -330,8 +426,15 @@ def _supplier_credit_rows(
             "creditable_base": _money(creditable),
             "pending_base": _money(entry["pending_base"]),
             "excluded_base": _money(entry["excluded_base"]),
-            "scenario_rate": _money(rate),
-            "scenario_rate_percent": _money(rate * Decimal(100)),
+            "ineligible_purchase_context_base": _money(
+                entry["ineligible_purchase_context_base"]
+            ),
+            "purchase_base_amount_basis": "PURCHASE_CONTEXT_ITEM_SUBTOTAL",
+            "pending_base_amount_basis": (
+                "PURCHASE_CONTEXT_ELIGIBLE_PENDING_ITEM_SUBTOTAL"
+            ),
+            "scenario_rate": _rate(rate),
+            "scenario_rate_percent": _rate(rate * Decimal(100)),
             "estimated_credit": _money(estimated),
             "credit_status": credit_status,
             "item_count": entry["item_count"],
@@ -344,6 +447,19 @@ def _supplier_credit_rows(
         summary["creditable_base"] += creditable
         summary["pending_base"] += entry["pending_base"]
         summary["estimated_credit"] += estimated
+        summary["excluded_base"] += entry["excluded_base"]
+        summary["ineligible_purchase_context_base"] += entry[
+            "ineligible_purchase_context_base"
+        ]
+    acquisition_totals = inputs["acquisition"].get("documentary_totals", {})
+    if not isinstance(acquisition_totals, dict):
+        acquisition_totals = {}
+    documentary_purchase_total = _optional_money(
+        acquisition_totals.get("gross_documentary_purchases")
+    )
+    non_purchase_entry_total = _optional_money(
+        acquisition_totals.get("non_purchase_entry_operations")
+    )
     public_summary = {
         "by_supplier_regime": {
             status: {
@@ -352,6 +468,10 @@ def _supplier_credit_rows(
                 "creditable_base": _money(values["creditable_base"]),
                 "pending_base": _money(values["pending_base"]),
                 "estimated_credit": _money(values["estimated_credit"]),
+                "excluded_base": _money(values["excluded_base"]),
+                "ineligible_purchase_context_base": _money(
+                    values["ineligible_purchase_context_base"]
+                ),
             }
             for status, values in sorted(by_status.items())
         },
@@ -359,12 +479,27 @@ def _supplier_credit_rows(
         "purchase_base": _money(
             sum((_decimal(row["purchase_base"]) for row in rows), Decimal(0))
         ),
+        "purchase_base_amount_basis": "PURCHASE_CONTEXT_ITEM_SUBTOTAL",
         "creditable_base": _money(
             sum((_decimal(row["creditable_base"]) for row in rows), Decimal(0))
         ),
         "pending_base": _money(
             sum((_decimal(row["pending_base"]) for row in rows), Decimal(0))
         ),
+        "pending_base_amount_basis": "PURCHASE_CONTEXT_ELIGIBLE_PENDING_ITEM_SUBTOTAL",
+        "excluded_base": _money(
+            sum((_decimal(row["excluded_base"]) for row in rows), Decimal(0))
+        ),
+        "ineligible_purchase_context_base": _money(
+            sum(
+                (_decimal(row["ineligible_purchase_context_base"]) for row in rows),
+                Decimal(0),
+            )
+        ),
+        "documentary_purchase_total": documentary_purchase_total,
+        "documentary_purchase_amount_basis": "UNIQUE_DOCUMENT_TOTAL",
+        "non_purchase_entry_total": non_purchase_entry_total,
+        "non_purchase_entry_amount_basis": "UNIQUE_DOCUMENT_TOTAL",
         "estimated_credit": _money(
             sum((_decimal(row["estimated_credit"]) for row in rows), Decimal(0))
         ),
@@ -424,6 +559,7 @@ def _customer_exposure(
             ),
             Decimal(0),
         )
+    documentary_gap_status = "NONE"
     if reconciliation is None:
         pgdas_revenue = Decimal(0)
         documentary_revenue = _decimal(
@@ -434,9 +570,13 @@ def _customer_exposure(
         reconciliation_status = reconciliation_mode
         group_complete = False
     else:
-        pgdas_revenue = _decimal(
-            reconciliation.get("totals", {}).get("pgdas_group_declared")
-        )
+        reconciliation_totals = reconciliation.get("totals", {})
+        pgdas_value = reconciliation_totals.get("pgdas_group_declared")
+        if reconciliation_mode == "ESTABLISHMENT":
+            pgdas_value = reconciliation_totals.get(
+                "pgdas_matched_establishment", pgdas_value
+            )
+        pgdas_revenue = _decimal(pgdas_value)
         documentary_revenue = _decimal(
             inputs["revenue"].get("totals", {}).get("net_documentary_revenue_candidate")
         )
@@ -446,8 +586,15 @@ def _customer_exposure(
         group_complete = bool(
             reconciliation.get("gates", {}).get("group_coverage_complete")
         )
+        if uncovered > 0:
+            documentary_gap_status = (
+                "ESTABLISHMENT_DOCUMENTS_MISSING"
+                if not _revenue_has_documents(inputs["revenue"])
+                else "DECLARED_WITHOUT_DOCUMENT_SUPPORT"
+            )
     category_totals["PESSOA_FISICA_DOCUMENTADA"] += cpf_total
-    category_totals["RECEITA_SEM_NOTA_FISCAL"] += uncovered
+    if documentary_gap_status != "NONE":
+        category_totals[documentary_gap_status] += uncovered
     threshold = pgdas_revenue * Decimal("0.20")
     if reconciliation is None:
         recommendation = (
@@ -455,7 +602,11 @@ def _customer_exposure(
             if reconciliation_mode == "GROUP_MISSING"
             else "PENDING_PGDAS_RECONCILIATION"
         )
-    elif xml_excess > 0:
+    elif documentary_gap_status == "ESTABLISHMENT_DOCUMENTS_MISSING":
+        recommendation = "PENDING_DOCUMENTARY_COVERAGE"
+    elif (
+        xml_excess > 0 or documentary_gap_status == "DECLARED_WITHOUT_DOCUMENT_SUPPORT"
+    ):
         recommendation = "PENDING_REVENUE_DIVERGENCE"
     elif reconciliation_mode == "GROUP" and not group_complete:
         recommendation = "PENDING_GROUP_CONSOLIDATION"
@@ -472,14 +623,16 @@ def _customer_exposure(
         "pgdas_revenue": _money(pgdas_revenue),
         "documentary_revenue": _money(documentary_revenue),
         "revenue_without_invoice": _money(uncovered),
-        "revenue_without_invoice_customer_assumption": "PESSOA_FISICA"
-        if uncovered > 0
-        else "NONE",
-        "revenue_without_invoice_tax_treatment": "TRIBUTED_IN_PGDAS_SAME_WAY"
-        if uncovered > 0
-        else "NOT_APPLICABLE",
+        "revenue_without_invoice_customer_assumption": "NONE",
+        "revenue_without_invoice_status": documentary_gap_status,
+        "revenue_without_invoice_tax_treatment": (
+            "TRIBUTED_IN_PGDAS_SAME_WAY"
+            if uncovered > 0
+            and documentary_gap_status != "ESTABLISHMENT_DOCUMENTS_MISSING"
+            else "NOT_APPLICABLE"
+        ),
         "revenue_without_invoice_fiscal_benefit": "NONE"
-        if uncovered > 0
+        if uncovered > 0 and documentary_gap_status != "ESTABLISHMENT_DOCUMENTS_MISSING"
         else "NOT_APPLICABLE",
         "xml_above_pgdas": _money(xml_excess),
         "normal_customer_revenue": _money(normal_revenue),
@@ -516,6 +669,9 @@ def plan_credit_folder(
         Path(portfolio_root).expanduser().resolve() if portfolio_root else None,
         inputs["period"],
     )
+    exposure_reconciliation, exposure_mode = _reconciliation_for_exposure(
+        base, reconciliation, reconciliation_mode
+    )
     inputs["customer_summary"] = _load_json(
         base / "06_REVISAO_RECEITAS" / "clientes-cnpj-regime-summary.json",
         "06_REVISAO_RECEITAS/clientes-cnpj-regime-summary.json",
@@ -523,7 +679,7 @@ def plan_credit_folder(
     scenario = _read_scenario(scenario_path)
     supplier_rows, supplier_summary = _supplier_credit_rows(inputs, scenario)
     customer_rows, customer_summary = _customer_exposure(
-        inputs, reconciliation, reconciliation_mode
+        inputs, exposure_reconciliation, exposure_mode
     )
     return {
         "schema": CREDIT_PLANNING_SCHEMA,
@@ -540,20 +696,17 @@ def plan_credit_folder(
         "supplier_credit": supplier_summary,
         "gates": {
             "pgdas_reconciled": reconciliation is not None,
-            "group_consolidated": reconciliation_mode == "ESTABLISHMENT"
-            or (
-                reconciliation_mode == "GROUP"
-                and bool(
-                    reconciliation
-                    and reconciliation.get("gates", {}).get("group_coverage_complete")
-                )
+            "group_consolidated": _reconciliation_is_consolidated(
+                reconciliation, reconciliation_mode
             ),
+            "simulation_authorized": True,
+            "uc004_planning_authorized": False,
             "simulation_only": True,
             "credit_legal_conclusion": False,
         },
         "limitations": [
             "As taxas do cenário são premissas de previsão e não crédito legal confirmado.",
-            "A diferença positiva do PGDAS-D sobre o XML é tratada como venda para PF apenas na simulação.",
+            "Diferenças entre PGDAS-D e documentos permanecem como lacunas documentais na simulação.",
             "A classificação de natureza econômica e a evidência legal do UC-003 continuam exigindo aprovação.",
         ],
         "_private_suppliers": supplier_rows,
@@ -588,10 +741,25 @@ def plan_credit_portfolio(
     pgdas = Decimal(0)
     documentary = Decimal(0)
     without_invoice = Decimal(0)
+    xml_above_pgdas = Decimal(0)
     normal = Decimal(0)
+    category_totals: dict[str, Decimal] = defaultdict(lambda: Decimal(0))
+    documentary_gap_statuses: set[str] = set()
+    skipped_reconciliation_periods: set[str] = set()
     for period_results_for_period in by_period.values():
-        declared = _decimal(
-            period_results_for_period[0]["customer_exposure"].get("pgdas_revenue")
+        period = str(period_results_for_period[0]["scope"]["period"])
+        if not all(
+            result["customer_exposure"].get("reconciliation_mode") == "ESTABLISHMENT"
+            for result in period_results_for_period
+        ):
+            skipped_reconciliation_periods.add(period)
+            continue
+        declared = sum(
+            (
+                _decimal(result["customer_exposure"].get("pgdas_revenue"))
+                for result in period_results_for_period
+            ),
+            Decimal(0),
         )
         documented = sum(
             (
@@ -602,7 +770,27 @@ def plan_credit_portfolio(
         )
         pgdas += declared
         documentary += documented
-        without_invoice += max(declared - documented, Decimal(0))
+        without_invoice += sum(
+            (
+                _decimal(result["customer_exposure"].get("revenue_without_invoice"))
+                for result in period_results_for_period
+            ),
+            Decimal(0),
+        )
+        xml_above_pgdas += sum(
+            (
+                _decimal(result["customer_exposure"].get("xml_above_pgdas"))
+                for result in period_results_for_period
+            ),
+            Decimal(0),
+        )
+        for result in period_results_for_period:
+            exposure = result["customer_exposure"]
+            documentary_gap_statuses.add(
+                str(exposure.get("revenue_without_invoice_status") or "NONE")
+            )
+            for category, value in exposure.get("category_totals", {}).items():
+                category_totals[category] += _decimal(value)
         normal += sum(
             (
                 _decimal(result["customer_exposure"].get("normal_customer_revenue"))
@@ -628,6 +816,8 @@ def plan_credit_portfolio(
     )
     if not all_group_complete:
         recommendation = "PENDING_GROUP_CONSOLIDATION"
+    elif "ESTABLISHMENT_DOCUMENTS_MISSING" in documentary_gap_statuses:
+        recommendation = "PENDING_DOCUMENTARY_COVERAGE"
     elif "PENDING_REVENUE_DIVERGENCE" in recommendations:
         recommendation = "PENDING_REVENUE_DIVERGENCE"
     elif unresolved_customer_regime_revenue > 0:
@@ -657,13 +847,62 @@ def plan_credit_portfolio(
         ),
         Decimal(0),
     )
+    supplier_purchase_base = sum(
+        (
+            _decimal(result["supplier_credit"].get("purchase_base"))
+            for result in period_results
+        ),
+        Decimal(0),
+    )
+    supplier_excluded = sum(
+        (
+            _decimal(result["supplier_credit"].get("excluded_base"))
+            for result in period_results
+        ),
+        Decimal(0),
+    )
+    supplier_ineligible = sum(
+        (
+            _decimal(result["supplier_credit"].get("ineligible_purchase_context_base"))
+            for result in period_results
+        ),
+        Decimal(0),
+    )
+    documentary_purchase_values = [
+        result["supplier_credit"].get("documentary_purchase_total")
+        for result in period_results
+    ]
+    non_purchase_entry_values = [
+        result["supplier_credit"].get("non_purchase_entry_total")
+        for result in period_results
+    ]
+    documentary_purchase_available = all(
+        value is not None for value in documentary_purchase_values
+    )
+    non_purchase_entry_available = all(
+        value is not None for value in non_purchase_entry_values
+    )
+    documentary_purchase_total = (
+        _money(
+            sum((_decimal(value) for value in documentary_purchase_values), Decimal(0))
+        )
+        if documentary_purchase_available
+        else None
+    )
+    non_purchase_entry_total = (
+        _money(
+            sum((_decimal(value) for value in non_purchase_entry_values), Decimal(0))
+        )
+        if non_purchase_entry_available
+        else None
+    )
     return {
         "schema": CREDIT_PLANNING_SCHEMA,
         "schema_version": CREDIT_PLANNING_SCHEMA_VERSION,
         "use_case": "UC-004",
         "mode": "PORTFOLIO",
         "scope": {
-            "periods": [result["scope"]["period"] for result in period_results],
+            "periods": sorted({result["scope"]["period"] for result in period_results}),
             "establishments": sorted(
                 {result["scope"].get("establishment_ref") for result in period_results}
             ),
@@ -681,18 +920,37 @@ def plan_credit_portfolio(
         ],
         "customer_exposure": {
             "basis": "PGDAS_RECONCILED_REVENUE",
+            "reconciliation_rollup_mode": "ESTABLISHMENT_ONLY",
+            "reconciliation_rollup_status": (
+                "PARTIAL" if skipped_reconciliation_periods else "COMPLETE"
+            ),
+            "reconciliation_rollup_skipped_periods": sorted(
+                skipped_reconciliation_periods
+            ),
             "pgdas_revenue": _money(pgdas),
             "documentary_revenue": _money(documentary),
             "revenue_without_invoice": _money(without_invoice),
-            "revenue_without_invoice_customer_assumption": "PESSOA_FISICA"
-            if without_invoice > 0
-            else "NONE",
-            "revenue_without_invoice_tax_treatment": "TRIBUTED_IN_PGDAS_SAME_WAY"
-            if without_invoice > 0
-            else "NOT_APPLICABLE",
-            "revenue_without_invoice_fiscal_benefit": "NONE"
-            if without_invoice > 0
-            else "NOT_APPLICABLE",
+            "xml_above_pgdas": _money(xml_above_pgdas),
+            "revenue_without_invoice_customer_assumption": "NONE",
+            "revenue_without_invoice_status": (
+                "ESTABLISHMENT_DOCUMENTS_MISSING"
+                if "ESTABLISHMENT_DOCUMENTS_MISSING" in documentary_gap_statuses
+                else "DECLARED_WITHOUT_DOCUMENT_SUPPORT"
+                if "DECLARED_WITHOUT_DOCUMENT_SUPPORT" in documentary_gap_statuses
+                else "NONE"
+            ),
+            "revenue_without_invoice_tax_treatment": (
+                "TRIBUTED_IN_PGDAS_SAME_WAY"
+                if without_invoice > 0
+                and "ESTABLISHMENT_DOCUMENTS_MISSING" not in documentary_gap_statuses
+                else "NOT_APPLICABLE"
+            ),
+            "revenue_without_invoice_fiscal_benefit": (
+                "NONE"
+                if without_invoice > 0
+                and "ESTABLISHMENT_DOCUMENTS_MISSING" not in documentary_gap_statuses
+                else "NOT_APPLICABLE"
+            ),
             "normal_customer_revenue": _money(normal),
             "normal_customer_share": _percent(normal, pgdas),
             "threshold_percent": "20.0000",
@@ -707,23 +965,43 @@ def plan_credit_portfolio(
             "unresolved_customer_regime_revenue": _money(
                 unresolved_customer_regime_revenue
             ),
+            "category_totals": {
+                category: _money(value)
+                for category, value in sorted(category_totals.items())
+            },
             "simulation_only": True,
         },
         "supplier_credit": {
+            "documentary_purchase_total": documentary_purchase_total,
+            "documentary_purchase_amount_basis": "UNIQUE_DOCUMENT_TOTAL",
+            "purchase_base": _money(supplier_purchase_base),
+            "purchase_base_amount_basis": "PURCHASE_CONTEXT_ITEM_SUBTOTAL",
             "creditable_base": _money(supplier_creditable),
             "pending_base": _money(supplier_pending),
+            "pending_base_amount_basis": (
+                "PURCHASE_CONTEXT_ELIGIBLE_PENDING_ITEM_SUBTOTAL"
+            ),
+            "excluded_base": _money(supplier_excluded),
+            "non_purchase_entry_total": non_purchase_entry_total,
+            "non_purchase_entry_amount_basis": "UNIQUE_DOCUMENT_TOTAL",
+            "ineligible_purchase_context_base": _money(supplier_ineligible),
             "estimated_credit": _money(supplier_credit_total),
             "simulation_only": True,
         },
         "gates": {
-            "period_count": len(period_results),
+            "period_count": len(
+                {result["scope"]["period"] for result in period_results}
+            ),
             "group_consolidated": all_group_complete,
+            "simulation_authorized": True,
+            "uc004_planning_authorized": False,
             "simulation_only": True,
             "credit_legal_conclusion": False,
         },
         "limitations": [
             "A recomendação consolidada depende da cobertura PGDAS-D de todas as competências.",
             "As taxas são premissas de previsão; o resultado não constitui crédito apropriável.",
+            "Métricas PGDAS-D e divergências só são consolidadas quando todos os estabelecimentos da competência possuem conciliação individual; competências em modo GROUP permanecem nos detalhes.",
         ],
         "_private_suppliers": supplier_rows,
         "_private_customers": customer_rows,
@@ -743,11 +1021,19 @@ def _local_report(result: dict[str, Any]) -> str:
         f"- Clientes de regime normal: {result['customer_exposure'].get('normal_customer_revenue', 'não apurado')}",
         f"- Participação: {result['customer_exposure'].get('normal_customer_share', 'não apurado')}%",
         f"- Linha de corte (20%): {result['customer_exposure'].get('threshold_amount', 'não apurado')}",
-        f"- Receita sem nota fiscal: {result['customer_exposure'].get('revenue_without_invoice', 'não apurado')}",
+        f"- Diferença PGDAS-D sem suporte documental: {result['customer_exposure'].get('revenue_without_invoice', 'não apurado')}",
+        f"- Documentos acima do PGDAS-D: {result['customer_exposure'].get('xml_above_pgdas', 'não apurado')}",
         f"- Tratamento da receita sem nota: {result['customer_exposure'].get('revenue_without_invoice_tax_treatment', 'não apurado')}",
         f"- Recomendação: `{result['customer_exposure'].get('recommendation')}`",
         "",
         "## Fornecedores e crédito estimado",
+        "",
+        f"- Compras documentais por documento: {result['supplier_credit'].get('documentary_purchase_total', 'não apurado')} ({result['supplier_credit'].get('documentary_purchase_amount_basis', 'não apurado')}).",
+        f"- Base total `PURCHASE_CONTEXT` por itens: {result['supplier_credit'].get('purchase_base', 'não apurado')} ({result['supplier_credit'].get('purchase_base_amount_basis', 'não apurado')}).",
+        f"- Base pendente elegível: {result['supplier_credit'].get('pending_base', 'não apurado')} ({result['supplier_credit'].get('pending_base_amount_basis', 'não apurado')}).",
+        f"- Entradas fora de compras: {result['supplier_credit'].get('non_purchase_entry_total', 'não apurado')} ({result['supplier_credit'].get('non_purchase_entry_amount_basis', 'não apurado')}).",
+        f"- `PURCHASE_CONTEXT` inelegível: {result['supplier_credit'].get('ineligible_purchase_context_base', 'não apurado')}.",
+        "- As bases acima têm populações distintas; não devem ser comparadas sob o mesmo rótulo.",
         "",
         "| Empresa + CNPJ | Regime | Base creditável | Taxa | Crédito estimado | Situação |",
         "|---|---|---:|---:|---:|---|",

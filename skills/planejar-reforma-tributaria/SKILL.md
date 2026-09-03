@@ -28,6 +28,9 @@ reunião só é gerado mediante solicitação explícita.
 A simulação de crédito IBS/CBS é uma etapa posterior e explícita. Ela só deve ser
 executada quando o PGDAS-D estiver conciliado no período ou grupo e o analista
 tiver aprovado o cenário de taxas; leia `simular-credito-ibs-cbs` antes de rodá-la.
+As saídas operacionais precisam carregar `simulation_authorized=true`; isso não
+substitui nem altera `uc004_planning_authorized`, que permanece reservado ao
+planejamento fiscal/legal.
 
 Pare quando:
 

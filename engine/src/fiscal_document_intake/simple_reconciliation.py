@@ -19,7 +19,7 @@ from .revenue import REVENUE_SCHEMA_VERSION
 SIMPLE_RECONCILIATION_SCHEMA = (
     "br.com.planejamento-reforma-tributaria/simple-revenue-reconciliation"
 )
-SIMPLE_RECONCILIATION_SCHEMA_VERSION = "1.2.0"
+SIMPLE_RECONCILIATION_SCHEMA_VERSION = "1.4.0"
 RECONCILED_STATUSES = frozenset({"RECONCILED", "NO_MOVEMENT"})
 MONEY_PATTERN = re.compile(r"\d{1,3}(?:\.\d{3})*,\d{2}")
 PERIOD_FOLDER_PATTERN = re.compile(
@@ -312,9 +312,16 @@ def _documentary_activities(revenue_summary: dict[str, Any]) -> dict[str, str]:
     return {key: value for key, value in activities.items() if _decimal(value) != 0}
 
 
+def _documentary_has_documents(revenue_summary: dict[str, Any]) -> bool:
+    reviewed_documents = revenue_summary.get("reviewed_documents")
+    if reviewed_documents is not None:
+        return int(reviewed_documents) > 0
+    return revenue_summary.get("status") != "REVENUE_REVIEW_NO_DOCUMENT"
+
+
 def _status(declared: Decimal, documentary: Decimal | None) -> str:
     if documentary is None:
-        return "ESTABLISHMENT_DOCUMENTS_MISSING"
+        return "NO_MOVEMENT" if declared == 0 else "ESTABLISHMENT_DOCUMENTS_MISSING"
     if declared == 0 and documentary == 0:
         return "NO_MOVEMENT"
     if declared == documentary:
@@ -383,6 +390,10 @@ def reconcile_simple_revenue(
                 if establishment_ref == documentary_ref
                 else None
             )
+            if establishment_ref == documentary_ref and not _documentary_has_documents(
+                revenue_summary
+            ):
+                documentary = None
             difference = declared - documentary if documentary is not None else declared
             records.append(
                 {
@@ -466,6 +477,9 @@ def reconcile_simple_revenue(
                 "severity": "WARNING",
             }
         )
+    simple_reconciliation_execution_ready = bool(
+        source_lock.get("authority_source_ref") and source_lock.get("sources")
+    )
 
     return {
         "schema": SIMPLE_RECONCILIATION_SCHEMA,
@@ -508,11 +522,12 @@ def reconcile_simple_revenue(
         "source_lock": source_lock,
         "warnings": warnings,
         "gates": {
-            "simple_reconciliation_execution_ready": True,
+            "simple_reconciliation_execution_ready": simple_reconciliation_execution_ready,
             "documentary_scope_reconciled": documentary_scope_reconciled,
             "group_coverage_complete": group_coverage_complete,
             "analyst_review_required": analyst_review_required,
             "non_issuance_confirmed": False,
+            "simulation_authorized": simple_reconciliation_execution_ready,
             "uc004_planning_authorized": False,
         },
         "limitations": [
@@ -588,6 +603,7 @@ def reconcile_simple_revenue_group(
     documentary_by_ref = {
         summary["scope"]["establishment_ref"]: _documentary_activities(summary)
         for summary in summaries
+        if _documentary_has_documents(summary)
     }
     declared_refs = {
         establishment["establishment_ref"]
@@ -702,6 +718,10 @@ def reconcile_simple_revenue_group(
                 "severity": "WARNING",
             }
         )
+    simple_reconciliation_execution_ready = bool(
+        source_lock.get("authority_source_ref") and source_lock.get("sources")
+    )
+
     return {
         "schema": SIMPLE_RECONCILIATION_SCHEMA,
         "schema_version": SIMPLE_RECONCILIATION_SCHEMA_VERSION,
@@ -744,11 +764,12 @@ def reconcile_simple_revenue_group(
         "source_lock": source_lock,
         "warnings": warnings,
         "gates": {
-            "simple_reconciliation_execution_ready": True,
+            "simple_reconciliation_execution_ready": simple_reconciliation_execution_ready,
             "documentary_scope_reconciled": documentary_scope_reconciled,
             "group_coverage_complete": group_coverage_complete,
             "analyst_review_required": analyst_review_required,
             "non_issuance_confirmed": False,
+            "simulation_authorized": simple_reconciliation_execution_ready,
             "uc004_planning_authorized": False,
         },
         "limitations": [
@@ -803,6 +824,7 @@ def _report(result: dict[str, Any]) -> str:
         f"- Escopo documental conciliado: `{str(gates['documentary_scope_reconciled']).lower()}`",
         f"- Cobertura integral do grupo: `{str(gates['group_coverage_complete']).lower()}`",
         f"- Revisão do analista necessária: `{str(gates['analyst_review_required']).lower()}`",
+        f"- Simulação do UC-004 autorizada: `{str(gates['simulation_authorized']).lower()}`",
         "",
         "## Ocorrências",
         "",

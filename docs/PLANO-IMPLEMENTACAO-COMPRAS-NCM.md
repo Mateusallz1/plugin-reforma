@@ -335,21 +335,38 @@ fornecedor e competência, relacionando `NOME EMPRESA + CNPJ`, regime documental
 produtos elegíveis, quantidade, valor e participação no total de produtos. O
 resumo público expõe somente esses totais agregados por regime; o detalhamento
 identificado é produzido apenas no relatório local solicitado pelo analista.
-Essa extensão elevou `COUNTERPARTY_SCHEMA_VERSION` para `1.2.0` e
-`DOCUMENTARY_SUMMARY_SCHEMA_VERSION` para `1.1.0`.
+Essa extensão havia elevado `COUNTERPARTY_SCHEMA_VERSION` para `1.2.0` e
+`DOCUMENTARY_SUMMARY_SCHEMA_VERSION` para `1.1.0`; a separação das bases
+monetárias abaixo elevou esses contratos novamente.
+
+## Bases monetárias de compras e contrapartes
+
+Os totais de fornecedores passaram a separar explicitamente três populações:
+`documentary_entries` (todos os documentos de entrada),
+`purchase_context_documents` (documentos únicos classificados como compra) e
+`purchase_context_items` (subtotal dos itens). O planejamento de crédito também
+expõe `purchase_base`, `pending_base`, `non_purchase_entry_total` e
+`ineligible_purchase_context_base`, cada um com seu `amount_basis`. Assim,
+`document_total` de contrapartes não é apresentado como se fosse uma base de
+compras ou uma base pendente de crédito.
+
+O parser do UC-003D reutiliza o contexto XML entre partes e regime, evitando
+releituras do mesmo arquivo. A extração genérica de CRT exige a subárvore do
+documento correspondente à chave fiscal e não atribui o primeiro emitente de
+um arquivo com múltiplos documentos.
 
 ## Migração e coerência
 
 Ao implementar os contratos:
 
 - `CONTENT_SCHEMA_VERSION`: `1.4.0`;
-- `ACQUISITION_SCHEMA_VERSION`: `1.5.0`;
-- `REVENUE_SCHEMA_VERSION`: `1.4.0`;
-- `COUNTERPARTY_SCHEMA_VERSION`: `1.2.0`;
-- `DOCUMENTARY_SUMMARY_SCHEMA_VERSION`: `1.1.0`;
-- `PLANNING_STATUS_SCHEMA_VERSION`: `1.9.0`;
-- `BATCH_SCHEMA_VERSION`: `1.11.0`.
-- `CREDIT_PLANNING_SCHEMA_VERSION`: `1.0.0`.
+- `ACQUISITION_SCHEMA_VERSION`: `1.7.0`;
+- `REVENUE_SCHEMA_VERSION`: `1.6.0`;
+- `COUNTERPARTY_SCHEMA_VERSION`: `1.5.0`;
+- `DOCUMENTARY_SUMMARY_SCHEMA_VERSION`: `1.5.0`;
+- `PLANNING_STATUS_SCHEMA_VERSION`: `1.13.0`;
+- `BATCH_SCHEMA_VERSION`: `1.14.0`.
+- `CREDIT_PLANNING_SCHEMA_VERSION`: `1.10.0`.
 
 Atualizar `_outputs_coherent`, os checks do coordenador e os IDs materiais. Os
 loaders também conferem cada hash com o digest confiável embarcado; uma alteração

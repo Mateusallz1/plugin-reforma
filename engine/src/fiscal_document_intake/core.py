@@ -891,9 +891,14 @@ def _parse_nfse_documents(root: Any, source_hash: str) -> list[dict[str, Any]] |
     return documents
 
 
-def _parse_xml_file(
+def _parse_xml_file_with_root(
     path: Path,
-) -> tuple[list[dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None]:
+) -> tuple[
+    list[dict[str, Any]],
+    dict[str, Any] | None,
+    dict[str, Any] | None,
+    Any | None,
+]:
     source_hash = _sha256_file(path)
     if path.stat().st_size > MAX_XML_BYTES:
         return (
@@ -906,6 +911,7 @@ def _parse_xml_file(
                 "analysis_scope": "UNKNOWN",
                 "reason_codes": ["XML_FILE_TOO_LARGE"],
             },
+            None,
         )
     try:
         root = SafeET.parse(path).getroot()
@@ -920,19 +926,20 @@ def _parse_xml_file(
                 "analysis_scope": "UNKNOWN",
                 "reason_codes": ["XML_NOT_PARSEABLE"],
             },
+            None,
         )
     event = _parse_cancellation_event(root, source_hash)
     if event is not None:
-        return [], event, None
+        return [], event, None, root
     document = _parse_document(root, source_hash)
     if document is not None:
-        return [document], None, None
+        return [document], None, None, root
     cte_document = _parse_cte_document(root, source_hash)
     if cte_document is not None:
-        return [cte_document], None, None
+        return [cte_document], None, None, root
     nfse_documents = _parse_nfse_documents(root, source_hash)
     if nfse_documents is not None:
-        return nfse_documents, None, None
+        return nfse_documents, None, None, root
     return (
         [],
         None,
@@ -943,7 +950,15 @@ def _parse_xml_file(
             "analysis_scope": "UNKNOWN",
             "reason_codes": [f"ROOT_{_local_name(root.tag).upper()}_UNSUPPORTED"],
         },
+        root,
     )
+
+
+def _parse_xml_file(
+    path: Path,
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None]:
+    parsed, event, error, _ = _parse_xml_file_with_root(path)
+    return parsed, event, error
 
 
 def _candidate_access_keys(text: str) -> set[str]:

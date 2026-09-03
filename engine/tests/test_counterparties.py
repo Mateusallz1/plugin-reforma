@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 from fiscal_document_intake.cli import main
 from fiscal_document_intake.content import extract_content_folder
@@ -10,6 +11,10 @@ from fiscal_document_intake.counterparties import (
     SUPPLIER_PRODUCTS_LOCAL_FILE,
     SUPPLIER_PRODUCTS_REPORT_FILE,
     SUPPLIER_SUMMARY_FILE,
+    _document_party_details,
+    _document_regime_evidence,
+    _generic_issuer_regime,
+    _load_xml_contexts,
     review_counterparties_folder,
     write_counterparty_outputs,
 )
@@ -92,6 +97,7 @@ def test_counterparties_separate_suppliers_cnpj_customers_and_cpf_sales(
     meeting_text = meeting.read_text(encoding="utf-8")
     assert OTHER in meeting_text
     assert "12345678901" not in meeting_text
+    assert "Documentos de entrada" in meeting_text
     assert (
         json.loads(
             (
@@ -134,6 +140,96 @@ def test_counterparties_resolve_cnpj_customer_from_local_registry(
 
     assert customer["simples_status"] == "OPTANTE_SIMPLES"
     assert "RFB_SNAPSHOT" in customer["evidence_sources"]
+
+
+def test_counterparties_treat_mei_as_compatible_with_simples_registry(
+    tmp_path: Path,
+) -> None:
+    folder = make_folder(tmp_path, "mei-registry", document_families=["NFE"])
+    supplier_key = access_key(OTHER, "55", 133)
+    supplier_xml = nfe_xml(
+        supplier_key, "55", OTHER, COMPANY, "2026-03-05", "100.00"
+    ).replace("</emit>", "<CRT>4</CRT></emit>")
+    (folder / "01_XML" / "supplier.xml").write_text(supplier_xml, encoding="utf-8")
+    (folder / "00_CONTROLE" / "simples-registry.local.jsonl").write_text(
+        json.dumps(
+            {
+                "cnpj": OTHER,
+                "status": "OPTANTE_SIMPLES",
+                "effective_from": "2026-01-01",
+                "effective_to": "9999-12-31",
+                "source": "RFB_SNAPSHOT",
+                "verified_at": "2026-09-03",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    _prepare(folder)
+
+    result = review_counterparties_folder(folder)
+
+    supplier = result["_private_suppliers"][0]
+    assert supplier["document_regime_status"] == "MEI"
+    assert supplier["simples_status"] == "MEI"
+    assert "EVIDENCIA_CONFLITANTE" not in supplier["simples_status"]
+    assert "RFB_SNAPSHOT" in supplier["evidence_sources"]
+    assert (
+        result["supplier_summary"]["by_simples_status"]["MEI"]["counterparty_count"]
+        == 1
+    )
+
+
+def test_counterparties_generic_crt_is_scoped_to_document_key() -> None:
+    root = ET.fromstring(
+        """
+        <root>
+          <NFe><infNFe Id="NFe111"><emit><CRT>4</CRT></emit></infNFe></NFe>
+          <NFe><infNFe Id="NFe222"><emit><CRT>3</CRT></emit></infNFe></NFe>
+        </root>
+        """
+    )
+
+    assert _generic_issuer_regime(root, "NFE", "111") == (
+        "4",
+        "DOCUMENT_CRT",
+    )
+    assert _generic_issuer_regime(root, "NFE", "222") == (
+        "3",
+        "DOCUMENT_CRT",
+    )
+    assert _generic_issuer_regime(root, "NFE") == (None, None)
+    assert _generic_issuer_regime(root, "NFE", "999") == (None, None)
+
+
+def test_counterparties_reuse_one_xml_parse_context(
+    tmp_path: Path, monkeypatch
+) -> None:
+    path = tmp_path / "one.xml"
+    path.write_text("<root />", encoding="utf-8")
+    calls = 0
+
+    def fake_parse_xml_file_with_root(candidate: Path):
+        nonlocal calls
+        calls += 1
+        return ([{"document_ref": "DOC-1"}], None, None, ET.fromstring("<root />"))
+
+    monkeypatch.setattr(
+        "fiscal_document_intake.counterparties._xml_paths",
+        lambda folder: [path],
+    )
+    monkeypatch.setattr(
+        "fiscal_document_intake.counterparties._parse_xml_file_with_root",
+        fake_parse_xml_file_with_root,
+    )
+
+    contexts = _load_xml_contexts(tmp_path)
+    documents = {"DOC-1": {"document_ref": "DOC-1", "document_type": "NFE"}}
+
+    _document_regime_evidence(contexts, documents)
+    _document_party_details(contexts, documents)
+
+    assert calls == 1
 
 
 def test_counterparties_accept_batch_identity_without_period_scope(
@@ -242,6 +338,67 @@ def test_counterparties_publish_supplier_product_mix_only_in_local_artifacts(
     )
     assert OTHER not in public
     assert "ITEM A" not in public
+
+
+def test_counterparties_expose_distinct_supplier_amount_populations(
+    tmp_path: Path,
+) -> None:
+    folder = make_folder(tmp_path, "amount-bases", document_families=["NFE"])
+    first_key = access_key(OTHER, "55", 131)
+    second_key = access_key(OTHER, "55", 132)
+    (folder / "01_XML" / "first.xml").write_text(
+        nfe_xml(first_key, "55", OTHER, COMPANY, "2026-03-05", "100.00"),
+        encoding="utf-8",
+    )
+    (folder / "01_XML" / "second.xml").write_text(
+        nfe_xml(second_key, "55", OTHER, COMPANY, "2026-03-06", "200.00"),
+        encoding="utf-8",
+    )
+    _prepare(folder)
+    acquisition_dir = folder / "05_REVISAO_AQUISICOES"
+    acquisition_dir.mkdir(exist_ok=True)
+    records = json.loads(
+        (folder / "03_SAIDAS" / "validation-result.json").read_text(encoding="utf-8")
+    )["documents"]["records"]
+    items = [
+        {
+            "document_ref": records[0]["document_ref"],
+            "direction": "ENTRADA",
+            "purchase_operation_status": "PURCHASE_CONTEXT",
+            "gross_amount": "100.00",
+            "eligible_for_uc003": True,
+        },
+        {
+            "document_ref": records[1]["document_ref"],
+            "direction": "ENTRADA",
+            "purchase_operation_status": "NON_PURCHASE_ENTRY",
+            "gross_amount": "200.00",
+            "eligible_for_uc003": True,
+        },
+    ]
+    acquisition_dir.joinpath("acquisition-items.local.jsonl").write_text(
+        "".join(json.dumps(item) + "\n" for item in items), encoding="utf-8"
+    )
+
+    result = review_counterparties_folder(folder)
+
+    assert result["supplier_summary"]["documentary_entries"] == {
+        "amount_basis": "ALL_ENTRY_DOCUMENT_TOTAL",
+        "document_count": 2,
+        "document_total": "300.00",
+    }
+    assert result["supplier_summary"]["purchase_context_documents"] == {
+        "amount_basis": "UNIQUE_DOCUMENT_TOTAL_PURCHASE_CONTEXT",
+        "document_count": 1,
+        "document_total": "100.00",
+    }
+    assert result["supplier_summary"]["purchase_context_items"] == {
+        "amount_basis": "PURCHASE_CONTEXT_ITEM_SUBTOTAL",
+        "item_count": 1,
+        "item_total": "100.00",
+        "eligible_item_count": 1,
+        "eligible_item_total": "100.00",
+    }
 
 
 def test_counterparties_preserve_distinct_crt_values_in_one_competence(

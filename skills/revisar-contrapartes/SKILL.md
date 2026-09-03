@@ -24,11 +24,19 @@ nesse modo não é necessário duplicar o `escopo.json` em cada competência.
 
 ## Regras
 
-- Fornecedores são agrupados por CNPJ e competência. CRT `1` e `2` indicam opção documental pelo Simples, CRT `3` indica regime normal e CRT `4` indica MEI. CRT ausente ou inválido produz `REGIME_INDETERMINADO`; evidências conflitantes permanecem explícitas.
+- Fornecedores são agrupados por CNPJ e competência. CRT `1` e `2` indicam opção documental pelo Simples, CRT `3` indica regime normal e CRT `4` indica MEI. CRT ausente ou inválido produz `REGIME_INDETERMINADO`; evidências conflitantes permanecem explícitas. `MEI` é compatível com o registro `OPTANTE_SIMPLES` por pertencer à mesma família, e o status mais específico `MEI` é preservado.
+- A evidência de CRT é resolvida no nó do documento correspondente à chave fiscal. Em arquivos com mais de um documento, o fallback não escolhe o primeiro emitente da raiz; sem correspondência segura, a evidência permanece ausente.
 - Clientes CNPJ são agrupados por CNPJ e podem usar um snapshot local de situação do Simples informado com `-SimplesRegistry`. Sem esse snapshot, o motor preserva `UNKNOWN` até a consulta autorizada.
 - Vendas para CPF são somente contadas por documento fiscal único; CPF e nome não são persistidos.
 - Consumidor sem CPF ou CNPJ fica em subtotal separado, sem agrupamento por nome.
 - Valores usam o total do documento validado pelo UC-001; não são somados por item.
+- No resumo de fornecedores, `documentary_entries` é a soma de todos os documentos
+  de entrada por contraparte CNPJ (`ALL_ENTRY_DOCUMENT_TOTAL`). Esse valor é uma
+  população de contrapartes e não é sinônimo de compras.
+- `purchase_context_documents` usa documentos únicos classificados como
+  `PURCHASE_CONTEXT`; `purchase_context_items` usa subtotal de itens. O campo
+  `eligible_item_total` restringe os itens elegíveis ao UC-003. As bases devem ser
+  comparadas somente quando o `amount_basis` for o mesmo.
 - Produtos adquiridos são agrupados por fornecedor e competência a partir das linhas `PRODUCT` elegíveis do UC-003. O ranking usa o valor dos itens e publica a participação do fornecedor no total de produtos.
 - A base identificada de produtos fica em `fornecedores-produtos.local.jsonl`; ela não altera o total documental de compras nem conclui direito a crédito.
 - O relatório de reunião é confidencial, local e gerado sob demanda. Ele não é autoridade tributária nem substitui a validação do analista.
