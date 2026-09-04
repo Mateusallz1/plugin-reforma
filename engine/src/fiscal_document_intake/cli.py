@@ -158,6 +158,13 @@ def main(argv: list[str] | None = None) -> int:
                 "planning_authorized": ready,
                 "outputs": [path.name for path in written],
             }
+            if result["unmatched_pdf_summary"]["total_documents_count"]:
+                response["outputs"].extend(
+                    [
+                        "chaves-pendentes-xml.local.txt",
+                        "documentos-apenas-pdf.local.jsonl",
+                    ]
+                )
         elif args.command == "extract-content":
             result = extract_content_folder(args.folder)
             output_dir = args.output_dir or args.folder / "04_CONTEUDO"

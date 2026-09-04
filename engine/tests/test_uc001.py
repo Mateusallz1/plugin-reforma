@@ -315,6 +315,29 @@ def write_dacte_pdf(
     document.save()
 
 
+def write_orphan_danfe_pdf(
+    path: Path,
+    *,
+    key: str,
+    amount: str,
+    include_key_in_text: bool,
+) -> None:
+    document = canvas.Canvas(str(path))
+    document.drawString(72, 780, "DANFE - DOCUMENTO AUXILIAR DA NOTA FISCAL ELETRONICA")
+    document.drawString(72, 760, "Data de Emissão: 05/03/2026")
+    document.drawString(72, 740, f"Valor Total da Nota: R$ {amount}")
+    if include_key_in_text:
+        document.drawString(72, 720, f"Chave de acesso: {key}")
+    document.save()
+
+
+def write_orphan_header_pdf(path: Path, lines: list[str]) -> None:
+    document = canvas.Canvas(str(path))
+    for index, line in enumerate(lines):
+        document.drawString(72, 780 - index * 20, line)
+    document.save()
+
+
 def test_access_key_generation_is_valid() -> None:
     assert validate_access_key(access_key(COMPANY, "55", 1))
     assert not validate_access_key("0" * 44)
@@ -344,7 +367,7 @@ def test_ready_end_to_end_csv_is_deterministic_and_private(tmp_path: Path) -> No
 
     assert first == second
     assert first["status"] == "DOCUMENT_BASE_READY"
-    assert first["schema_version"] == "1.9.0"
+    assert first["schema_version"] == "1.10.0"
     assert first["scope"]["report_population_policy"] == "COMPLEMENTARY"
     assert first["reconciliation"]["population_policy"] == "COMPLEMENTARY"
     assert first["gates"]["planning_authorized"] is True
@@ -559,6 +582,100 @@ def test_raw_folder_discovers_scope_pdfs_and_directions(tmp_path: Path) -> None:
     assert "DANFE_WITHOUT_XML" in warning_codes
     assert "REPORT_MISSING" in warning_codes
     assert "FOLDER_DIRECTION_CONFLICT" not in warning_codes
+
+
+def test_orphan_pdf_headers_generate_private_rescue_queue(tmp_path: Path) -> None:
+    folder = make_folder(tmp_path, "pdf-only")
+    first_key = access_key(OTHER, "55", 25)
+    second_key = access_key(OTHER, "65", 26)
+    write_orphan_danfe_pdf(
+        folder / "01_XML" / f"danfe-{first_key}.pdf",
+        key=first_key,
+        amount="1.234,56",
+        include_key_in_text=False,
+    )
+    write_orphan_danfe_pdf(
+        folder / "01_XML" / "danfe-texto.pdf",
+        key=second_key,
+        amount="200,00",
+        include_key_in_text=True,
+    )
+
+    result = validate_folder(folder)
+
+    assert result["status"] == "DOCUMENT_BASE_BLOCKED"
+    assert result["gates"]["planning_authorized"] is False
+    assert result["pdf_evidence"]["status_counts"] == {"DANFE_WITHOUT_XML": 2}
+    assert result["unmatched_pdf_summary"] == {
+        "total_documents_count": 2,
+        "total_occurrences_count": 2,
+        "total_amount": "1434.56",
+        "amount_identified_document_count": 2,
+        "amount_missing_document_count": 0,
+        "keys_pending_xml_count": 2,
+    }
+    json_path, report_path = write_outputs(result, folder / "03_SAIDAS")
+    pending_path = folder / "03_SAIDAS" / "chaves-pendentes-xml.local.txt"
+    details_path = folder / "03_SAIDAS" / "documentos-apenas-pdf.local.jsonl"
+    assert pending_path.read_text(encoding="utf-8").splitlines() == sorted(
+        [first_key, second_key]
+    )
+    details = [json.loads(line) for line in details_path.read_text().splitlines()]
+    assert {item["access_key"] for item in details} == {first_key, second_key}
+    assert {item["amount"] for item in details} == {"1234.56", "200.00"}
+    technical_output = json_path.read_text(encoding="utf-8")
+    report_output = report_path.read_text(encoding="utf-8")
+    assert first_key not in technical_output + report_output
+    assert second_key not in technical_output + report_output
+    assert "valores não consolidados" in report_output
+    assert "chaves-pendentes-xml.local.txt" in report_output
+
+
+def test_orphan_dacte_and_nfse_capture_header_values(tmp_path: Path) -> None:
+    folder = make_folder(
+        tmp_path, "pdf-only-other-families", document_families=["CTE", "NFSE"]
+    )
+    cte_key = access_key(OTHER, "57", 27)
+    write_orphan_header_pdf(
+        folder / "01_XML" / "dacte.pdf",
+        [
+            "DACTE - DOCUMENTO AUXILIAR DO CONHECIMENTO DE TRANSPORTE",
+            "Data de Emissão: 05/03/2026",
+            "Valor a Receber: R$ 450,00",
+            f"Chave de acesso: {cte_key}",
+        ],
+    )
+    write_orphan_header_pdf(
+        folder / "01_XML" / "nfse.pdf",
+        [
+            "NOTA FISCAL DE SERVICOS ELETRONICA",
+            "DADOS DA NFSE",
+            "Numero: 1234",
+            "Valor dos Serviços: R$ 100,00",
+        ],
+    )
+
+    result = validate_folder(folder)
+
+    assert result["pdf_evidence"]["status_counts"] == {
+        "DACTE_WITHOUT_XML": 1,
+        "NFSE_PDF_WITHOUT_XML": 1,
+    }
+    assert result["unmatched_pdf_summary"]["total_amount"] == "550.00"
+    assert result["unmatched_pdf_summary"]["keys_pending_xml_count"] == 1
+    private_orphans = result["_private_pdf_orphans"]
+    assert any(
+        item["document_type"] == "CTE"
+        and item["access_key"] == cte_key
+        and item["amount"] == "450.00"
+        for item in private_orphans
+    )
+    assert any(
+        item["document_type"] == "NFSE"
+        and item["service_number"] == "1234"
+        and item["amount"] == "100.00"
+        for item in private_orphans
+    )
 
 
 def test_raw_folder_accepts_validated_batch_scope_override(tmp_path: Path) -> None:

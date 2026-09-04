@@ -9,17 +9,18 @@
 - Bootstrap instalado não reutiliza `.venv` empacotado: o runtime `uv` padrão é versionado no `LocalApplicationData`, evitando executáveis com caminho do checkout de desenvolvimento.
 - Skills no fonte: `planejar-reforma-tributaria` como porta de entrada, `uv` para manutenção e as skills operacionais de UC-001 a UC-003D.
 - UC-001: NF-e, NFC-e, NFS-e ABRASF e CT-e modelo 57.
-- Esquema de saída UC-001: `1.9.0`, com política de relatório, autorização por escopo e oito grupos operacionais.
+- Esquema de saída UC-001: `1.10.0`, com política de relatório, autorização por escopo, oito grupos operacionais e resumo de PDFs pendentes de XML.
 - Homologação real: 130 documentos incluídos, três escopos `READY`, sem bloqueadores.
 - UC-002: extração normalizada de produtos, serviços e transportes somente nos grupos operacionais autorizados.
 - Homologação real do UC-002: 130 documentos selecionados, 204 registros, 25 componentes, 44 NF-e reconciliadas e nenhum bloqueador de extração.
-- Testes: 104 aprovados, incluindo ausência de movimento, migração de schemas, composição completa do `vNF`, compras documentais, devoluções, comparação compras × vendas, triagem NCM, diagnóstico de nomenclatura, integridade dos rulesets, regime CAIXA, `natOp`, consolidação matriz/filiais, contrapartes, mix de produtos por fornecedor, classificação CRT indeterminada, simulação de crédito por período, diferença PGDAS-D × XML, tratamento técnico de `RECEITA_SEM_NOTA_FISCAL` e consulta pendente de regime de clientes, privacidade de CPF, divergência de CRT por competência, regressões de hash de conteúdo, coerência das saídas, fechamento SQLite e retomada de aprovações preparadas; Ruff, formatação, empacotamento do snapshot e lock do `uv` aprovados.
+- Testes: 126 aprovados, incluindo ausência de movimento, migração de schemas, composição completa do `vNF`, compras documentais, devoluções, comparação compras × vendas, triagem NCM, diagnóstico de nomenclatura, integridade dos rulesets, regime CAIXA, `natOp`, consolidação matriz/filiais, contrapartes, mix de produtos por fornecedor, classificação CRT indeterminada, simulação de crédito por período, diferença PGDAS-D × XML, tratamento técnico de `RECEITA_SEM_NOTA_FISCAL`, consulta pendente de regime de clientes e captura de cabeçalho de PDFs órfãos com fila de resgate, privacidade de CPF, divergência de CRT por competência, regressões de hash de conteúdo, coerência das saídas, fechamento SQLite e retomada de aprovações preparadas; Ruff, formatação, empacotamento do snapshot e lock do `uv` aprovados.
 
 ## Concluído
 
 - [x] Validação inicial de NF-e/NFC-e.
 - [x] Inclusão de NFS-e ABRASF consolidada, prestadas e tomadas.
 - [x] Inclusão de CT-e modelo 57 e DACTE.
+- [x] Captura indicativa de DANFE/DACTE/NFS-e apenas em PDF, com resumo explícito de valores não consolidados e fila local para resgate do XML.
 - [x] Separação por modelo e direção.
 - [x] Estados `SEM_DOCUMENTO` e `DOCUMENTO_RESTRITO`.
 - [x] Autorizações independentes para `NFE_NFCE`, `NFSE` e `CTE`.

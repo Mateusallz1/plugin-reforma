@@ -23,6 +23,7 @@ Git.
 - NFS-e ABRASF com direção `NFSE_PRESTADOS`/`NFSE_TOMADOS`.
 - CT-e modelo 57, leiaute 4.00, com direção `CTE_PRESTADOS`/`CTE_TOMADOS`.
 - PDFs auxiliares: DANFE, DACTE, impressões de NFS-e e livros fiscais.
+- PDF sem XML gera `unmatched_pdf_summary` e fila local de resgate; seu cabeçalho é indicativo, não autoriza planejamento e não entra em UC-002/UC-003/UC-004.
 - Autorização por escopo: uma família restrita não invalida famílias independentes prontas.
 - Grupos sem ocorrência ficam `SEM_DOCUMENTO` e não geram análise operacional; essa ausência documental não prova ausência de movimento.
 - Relatórios usam `report_population_policy=COMPLEMENTARY`: divergências são avisos, XML válido não é filtrado e nota declarada sem XML não é incluída. Não implemente `WHITELIST` sem solicitação explícita e novos testes.

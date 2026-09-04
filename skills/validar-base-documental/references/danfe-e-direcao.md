@@ -4,6 +4,10 @@
 
 O DANFE, o DACTE, a impressão de NFS-e e o livro fiscal são evidências auxiliares e não substituem o XML. Extraia somente os identificadores necessários para associação local; não exporte texto bruto, chave completa, código de verificação, nomes ou identificadores tributários.
 
+Quando um PDF fiscal não tiver XML correspondente, o UC-001 captura apenas o cabeçalho que puder ser identificado de forma única (chave de acesso, número da NFS-e, data de emissão e valor). O valor é indicativo e fica fora da população documental, dos itens e de qualquer simulação de crédito. Essas ocorrências aparecem no resumo `unmatched_pdf_summary` e são gravadas localmente em `03_SAIDAS/documentos-apenas-pdf.local.jsonl`; as chaves de 44 dígitos ficam em `03_SAIDAS/chaves-pendentes-xml.local.txt` para resgate.
+
+O relatório deve deixar explícito que esses valores são não consolidados. A ausência de valor no cabeçalho é representada como não apurada, nunca como zero. PDFs consolidados com várias chaves não têm o valor rateado entre notas.
+
 Estados:
 
 - `DANFE_MATCHED`: todas as chaves detectadas possuem XML correspondente;

@@ -58,6 +58,15 @@ Cada grupo informa se há `COM_DOCUMENTO`, `SEM_DOCUMENTO` ou `DOCUMENTO_RESTRIT
 
 Relatórios CSV/XLSX usam a política `COMPLEMENTARY`: conciliam população, situação e valores, mas não filtram XMLs documentalmente válidos nem incluem notas declaradas sem XML. O campo opcional `report_population_policy` do `escopo.json` assume esse valor; `WHITELIST` permanece reservado para evolução futura.
 
+PDFs DANFE, DACTE e impressões de NFS-e sem XML também são contabilizados como
+evidência pendente. O UC-001 captura somente cabeçalho confiável (chave ou
+identificador, data e valor), publica `unmatched_pdf_summary` e deixa explícito
+no relatório quando há valores não consolidados. Esses PDFs nunca autorizam
+planejamento, extração de itens ou crédito. A fila local de resgate fica em
+`03_SAIDAS/chaves-pendentes-xml.local.txt`, e o detalhe protegido em
+`03_SAIDAS/documentos-apenas-pdf.local.jsonl`; nenhum desses identificadores
+aparece no JSON técnico ou na conversa.
+
 ## Extração de conteúdo
 
 O UC-002 normaliza somente documentos liberados pelo UC-001:

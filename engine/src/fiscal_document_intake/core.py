@@ -26,7 +26,7 @@ MAX_XML_BYTES = 10 * 1024 * 1024
 MAX_PDF_FILES = 5_000
 MAX_PDF_BYTES = 50 * 1024 * 1024
 MAX_PDF_PAGES = 500
-DOCUMENT_SCHEMA_VERSION = "1.9.0"
+DOCUMENT_SCHEMA_VERSION = "1.10.0"
 RAW_IGNORED_DIRECTORIES = {
     ".GIT",
     ".VENV",
@@ -981,6 +981,109 @@ def _compact_search_text(value: str) -> str:
     return re.sub(r"[^0-9a-z]", "", _fold_text(value))
 
 
+def _parse_pdf_amount(value: str) -> Decimal | None:
+    """Parse a monetary token commonly emitted by DANFE/DACTE PDF text."""
+    candidate = re.sub(r"[^0-9,.-]", "", value)
+    if not candidate:
+        return None
+    if "," in candidate and "." in candidate:
+        # Brazilian notation uses the last separator as the decimal marker.
+        if candidate.rfind(",") > candidate.rfind("."):
+            candidate = candidate.replace(".", "").replace(",", ".")
+        else:
+            candidate = candidate.replace(",", "")
+    elif "," in candidate:
+        if candidate.count(",") > 1:
+            candidate = candidate.replace(",", "")
+        else:
+            candidate = candidate.replace(",", ".")
+    elif candidate.count(".") > 1:
+        candidate = candidate.replace(".", "")
+    return _parse_decimal(candidate)
+
+
+def _pdf_date_value(value: str) -> date | None:
+    parts = re.split(r"[/-]", value.strip())
+    if len(parts) != 3:
+        return None
+    try:
+        if len(parts[0]) == 4:
+            return date(int(parts[0]), int(parts[1]), int(parts[2]))
+        return date(int(parts[2]), int(parts[1]), int(parts[0]))
+    except ValueError:
+        return None
+
+
+def _extract_pdf_header_date(text: str) -> date | None:
+    folded = _fold_text(text)
+    pattern = re.compile(
+        r"(?:data\s*(?:de\s*)?emissao|dhemi|emissao)"
+        r"[^0-9]{0,60}"
+        r"(\d{2}[/-]\d{2}[/-]\d{4}|\d{4}[/-]\d{2}[/-]\d{2})"
+    )
+    candidates = {
+        parsed
+        for match in pattern.finditer(folded)
+        if (parsed := _pdf_date_value(match.group(1))) is not None
+    }
+    return next(iter(candidates)) if len(candidates) == 1 else None
+
+
+def _extract_pdf_header_amount(text: str, pdf_kind: str) -> Decimal | None:
+    folded = _fold_text(text)
+    if pdf_kind == "DACTE":
+        labels = (
+            r"valor\s+(?:a\s+receber|total\s+da\s+prestacao|da\s+prestacao|prestacao)",
+            r"v\s*t\s*prest",
+        )
+    elif pdf_kind in {"NFSE_PRINT", "NFSE_REPORT"}:
+        labels = (
+            r"valor\s+(?:dos?|de)\s+servicos?",
+            r"valor\s+liquido",
+            r"valor\s+total",
+        )
+    else:
+        labels = (
+            r"valor\s+total\s+da\s+nota",
+            r"valor\s+total",
+            r"v\s*nf",
+        )
+    amount_pattern = re.compile(
+        r"(?:" + "|".join(labels) + r")[^0-9]{0,50}"
+        r"((?:\d{1,3}(?:[.\s]\d{3})+|\d+)(?:[,.]\d{2})?)"
+    )
+    candidates = {
+        parsed
+        for match in amount_pattern.finditer(folded)
+        if (parsed := _parse_pdf_amount(match.group(1))) is not None
+    }
+    return next(iter(candidates)) if len(candidates) == 1 else None
+
+
+def _extract_nfse_number(text: str) -> str | None:
+    folded = _fold_text(text)
+    pattern = re.compile(
+        r"(?:numero(?:\s+(?:da\s+)?(?:nfse|nota))?|n\s*[oº]\s*(?:da\s+)?nota)"
+        r"[^0-9a-z]{0,20}([0-9a-z][0-9a-z./-]{0,30})"
+    )
+    candidates = {
+        match.group(1).strip("./-")
+        for match in pattern.finditer(folded)
+        if match.group(1).strip("./-")
+    }
+    return next(iter(candidates)) if len(candidates) == 1 else None
+
+
+def _pdf_document_type(pdf_kind: str, access_key: str | None = None) -> str:
+    if pdf_kind == "DACTE":
+        return "CTE"
+    if pdf_kind in {"NFSE_PRINT", "NFSE_REPORT"}:
+        return "NFSE"
+    if access_key and access_key[20:22] == "65":
+        return "NFCE"
+    return "NFE"
+
+
 def _parse_pdf_file(
     path: Path, documents_by_key: dict[str, dict[str, Any]]
 ) -> dict[str, Any]:
@@ -998,6 +1101,9 @@ def _parse_pdf_file(
         "unmatched_identifiers": 0,
         "pdf_kind": "UNKNOWN",
         "status": "PDF_READ_ERROR",
+        "header_issue_date": None,
+        "header_amount": None,
+        "header_amount_confidence": "NOT_IDENTIFIED",
         "warnings": [],
     }
     if path.stat().st_size > MAX_PDF_BYTES:
@@ -1018,14 +1124,16 @@ def _parse_pdf_file(
         base_record["warnings"].append("PDF_NOT_READABLE")
         return base_record
 
-    raw_keys = _candidate_access_keys(path.stem) | _candidate_access_keys(
-        extracted_text
-    )
+    filename_keys = _candidate_access_keys(path.stem)
+    text_keys = _candidate_access_keys(extracted_text)
+    # The filename is the least ambiguous source for a key.  Text extraction
+    # is only used as a fallback, because tabular PDF text can repeat or
+    # reorder digits from several documents.
+    raw_keys = filename_keys or text_keys
     documents_by_access_key = {
         document["access_key"]: document
         for document in documents_by_key.values()
-        if document["document_type"] in {"NFE", "NFCE", "CTE"}
-        and document.get("access_key")
+        if document.get("access_key")
     }
     folded_text = _fold_text(extracted_text)
     compact_text = _compact_search_text(f"{path.stem}\n{extracted_text}")
@@ -1039,6 +1147,19 @@ def _parse_pdf_file(
         "documento auxiliar" in folded_text
         and "conhecimento de transporte" in folded_text
     )
+    hint = base_record["direction_hint"]
+    if hint == "UNKNOWN":
+        text_directions = {
+            direction
+            for direction, pattern in {
+                "ENTRADA": r"\bentrada\b",
+                "SAIDA": r"\bsa[ií]da\b",
+            }.items()
+            if re.search(pattern, folded_text)
+        }
+        if len(text_directions) == 1:
+            hint = next(iter(text_directions))
+            base_record["direction_hint"] = hint
     is_nfse_report = (
         "termo de abertura" in folded_text
         or "registros de notas fiscais" in folded_text
@@ -1046,15 +1167,12 @@ def _parse_pdf_file(
     is_nfse_print = "dados da nfse" in folded_text or (
         "codigo de verificacao" in folded_text and "tomador do servico" in folded_text
     )
-    keys = (
-        raw_keys & set(documents_by_access_key)
-        if looks_like_nfse and not looks_like_danfe and not looks_like_dacte
-        else raw_keys
-    )
     if looks_like_dacte:
         eligible_access_types = {"CTE"}
     elif looks_like_danfe:
         eligible_access_types = {"NFE", "NFCE"}
+    elif looks_like_nfse:
+        eligible_access_types = {"NFSE"}
     else:
         eligible_access_types = {"NFE", "NFCE", "CTE"}
     eligible_by_access_key = {
@@ -1062,11 +1180,11 @@ def _parse_pdf_file(
         for key, document in documents_by_access_key.items()
         if document["document_type"] in eligible_access_types
     }
+    keys = raw_keys
     matched_by_ref = {
         eligible_by_access_key[key]["document_ref"]: eligible_by_access_key[key]
         for key in sorted(keys & set(eligible_by_access_key))
     }
-    hint = base_record["direction_hint"]
     for document in documents_by_key.values():
         if document["document_type"] != "NFSE":
             continue
@@ -1125,8 +1243,15 @@ def _parse_pdf_file(
         base_record["status"] = "PDF_KEY_NOT_FOUND"
         base_record["warnings"].append("PDF_KEY_NOT_FOUND")
     elif unmatched:
-        base_record["status"] = "DANFE_WITHOUT_XML"
-        base_record["warnings"].append("DANFE_WITHOUT_XML")
+        if looks_like_nfse and not looks_like_danfe:
+            base_record["pdf_kind"] = (
+                "NFSE_REPORT" if is_nfse_report and not is_nfse_print else "NFSE_PRINT"
+            )
+            base_record["status"] = "NFSE_PDF_WITHOUT_XML"
+            base_record["warnings"].append("NFSE_PDF_WITHOUT_XML")
+        else:
+            base_record["status"] = "DANFE_WITHOUT_XML"
+            base_record["warnings"].append("DANFE_WITHOUT_XML")
     elif matched_types == {"NFSE"}:
         if is_nfse_report and not is_nfse_print:
             base_record["pdf_kind"] = "NFSE_REPORT"
@@ -1140,6 +1265,109 @@ def _parse_pdf_file(
     else:
         base_record["pdf_kind"] = "DANFE"
         base_record["status"] = "DANFE_MATCHED"
+
+    orphan_statuses = {
+        "DANFE_WITHOUT_XML",
+        "DACTE_WITHOUT_XML",
+        "NFSE_PDF_WITHOUT_XML",
+    }
+    if base_record["status"] in orphan_statuses:
+        header_date = _extract_pdf_header_date(extracted_text)
+        header_amount = _extract_pdf_header_amount(
+            extracted_text, base_record["pdf_kind"]
+        )
+        base_record["header_issue_date"] = (
+            header_date.isoformat() if header_date else None
+        )
+        base_record["header_amount"] = _format_decimal(header_amount)
+        base_record["header_amount_confidence"] = (
+            "HEADER_LABEL_UNIQUE" if header_amount is not None else "NOT_IDENTIFIED"
+        )
+        orphan_keys = sorted(unmatched)
+        private_orphans: list[dict[str, Any]] = []
+        if orphan_keys:
+            for index, access_key in enumerate(orphan_keys):
+                # A consolidated PDF can contain several notes.  Preserve its
+                # header total once, attached to the first key only, and mark
+                # it as unallocated instead of multiplying or rateando it.
+                amount = header_amount if index == 0 else None
+                private_orphans.append(
+                    {
+                        "pdf_ref": pdf_ref,
+                        "source_file": path.name,
+                        "document_type": _pdf_document_type(
+                            base_record["pdf_kind"], access_key
+                        ),
+                        "pdf_kind": base_record["pdf_kind"],
+                        "access_key": access_key,
+                        "identifier": access_key,
+                        "direction_hint": hint,
+                        "issue_date": header_date.isoformat() if header_date else None,
+                        "amount": _format_decimal(amount),
+                        "amount_confidence": (
+                            "HEADER_LABEL_UNIQUE"
+                            if amount is not None
+                            else "NOT_IDENTIFIED"
+                        ),
+                        "amount_scope": (
+                            "DOCUMENT_TOTAL_NOT_ALLOCATED"
+                            if amount is not None and len(orphan_keys) > 1
+                            else "DOCUMENT_TOTAL"
+                            if amount is not None
+                            else None
+                        ),
+                        "status": base_record["status"],
+                    }
+                )
+        elif base_record["pdf_kind"] in {"NFSE_PRINT", "NFSE_REPORT"}:
+            service_number = _extract_nfse_number(extracted_text)
+            private_orphans.append(
+                {
+                    "pdf_ref": pdf_ref,
+                    "source_file": path.name,
+                    "document_type": "NFSE",
+                    "pdf_kind": base_record["pdf_kind"],
+                    "access_key": None,
+                    "identifier": service_number or pdf_ref,
+                    "direction_hint": hint,
+                    "issue_date": header_date.isoformat() if header_date else None,
+                    "amount": _format_decimal(header_amount),
+                    "amount_confidence": (
+                        "HEADER_LABEL_UNIQUE"
+                        if header_amount is not None
+                        else "NOT_IDENTIFIED"
+                    ),
+                    "amount_scope": "DOCUMENT_TOTAL"
+                    if header_amount is not None
+                    else None,
+                    "service_number": service_number,
+                    "status": base_record["status"],
+                }
+            )
+        else:
+            private_orphans.append(
+                {
+                    "pdf_ref": pdf_ref,
+                    "source_file": path.name,
+                    "document_type": _pdf_document_type(base_record["pdf_kind"]),
+                    "pdf_kind": base_record["pdf_kind"],
+                    "access_key": None,
+                    "identifier": pdf_ref,
+                    "direction_hint": hint,
+                    "issue_date": header_date.isoformat() if header_date else None,
+                    "amount": _format_decimal(header_amount),
+                    "amount_confidence": (
+                        "HEADER_LABEL_UNIQUE"
+                        if header_amount is not None
+                        else "NOT_IDENTIFIED"
+                    ),
+                    "amount_scope": "DOCUMENT_TOTAL"
+                    if header_amount is not None
+                    else None,
+                    "status": base_record["status"],
+                }
+            )
+        base_record["_private_orphans"] = private_orphans
 
     matched_directions = {
         document.get("direction")
@@ -1548,7 +1776,12 @@ def validate_folder(
             and key not in documents_by_key
         ):
             documents_by_key[key] = document
-    pdf_records = [_parse_pdf_file(path, documents_by_key) for path in pdf_paths]
+    pdf_records: list[dict[str, Any]] = []
+    private_pdf_orphans: list[dict[str, Any]] = []
+    for path in pdf_paths:
+        record = _parse_pdf_file(path, documents_by_key)
+        private_pdf_orphans.extend(record.pop("_private_orphans", []))
+        pdf_records.append(record)
     all_hashes.extend(record["source_hash"] for record in pdf_records)
     reports, report_hashes = _load_reports(base)
     reconciliations = _reconcile(documents, reports)
@@ -1643,6 +1876,35 @@ def validate_folder(
         if report["report_ref"] in matched_report_refs
     )
     unreconciled_amount = reported_amount - matched_amount
+
+    orphan_pdf_refs = {item["pdf_ref"] for item in private_pdf_orphans}
+    pending_keys = {
+        item["access_key"]
+        for item in private_pdf_orphans
+        if validate_access_key(item.get("access_key") or "")
+    }
+    identified_orphan_amounts = [
+        parsed
+        for item in private_pdf_orphans
+        if (parsed := _parse_decimal(item.get("amount"))) is not None
+    ]
+    identified_orphan_pdf_refs = {
+        item["pdf_ref"]
+        for item in private_pdf_orphans
+        if _parse_decimal(item.get("amount")) is not None
+    }
+    unmatched_pdf_summary = {
+        "total_documents_count": len(orphan_pdf_refs),
+        "total_occurrences_count": len(private_pdf_orphans),
+        "total_amount": _format_decimal(_sum_decimal(identified_orphan_amounts))
+        if identified_orphan_amounts
+        else None,
+        "amount_identified_document_count": len(identified_orphan_pdf_refs),
+        "amount_missing_document_count": len(
+            orphan_pdf_refs - identified_orphan_pdf_refs
+        ),
+        "keys_pending_xml_count": len(pending_keys),
+    }
 
     validation_material = {
         "scope": {
@@ -1804,6 +2066,7 @@ def validate_folder(
             ),
             "records": pdf_records,
         },
+        "unmatched_pdf_summary": unmatched_pdf_summary,
         "reconciliation": {
             "population_policy": scope["report_population_policy"],
             "status_counts": dict(
@@ -1839,6 +2102,7 @@ def validate_folder(
             "establishment_ref": scope["establishment_ref"],
             "entity_taxpayer_ids": scope["entity_taxpayer_ids"],
         },
+        "_private_pdf_orphans": private_pdf_orphans,
         "limitations": [
             "A situação atual não foi consultada na autoridade fiscal.",
             "A assinatura digital não foi validada criptograficamente.",
@@ -1858,6 +2122,7 @@ def validate_folder(
 def _markdown_report(result: dict[str, Any]) -> str:
     documents = result["documents"]
     pdf_evidence = result["pdf_evidence"]
+    unmatched_pdf_summary = result["unmatched_pdf_summary"]
     reconciliation = result["reconciliation"]
     report_identity = result["_private_report_context"]
     lines = [
@@ -1979,6 +2244,37 @@ def _markdown_report(result: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
+            "## Documentos identificados apenas em PDF (pendentes de XML)",
+            "",
+        ]
+    )
+    if unmatched_pdf_summary["total_documents_count"]:
+        lines.extend(
+            [
+                (
+                    "> A empresa possui valores não consolidados. Os documentos abaixo "
+                    "foram identificados somente em PDF e não entram na base XML, "
+                    "na análise de itens ou em simulações de crédito até que o XML "
+                    "correspondente seja resgatado e validado."
+                ),
+                "",
+                f"- PDFs sem XML correspondente: {unmatched_pdf_summary['total_documents_count']}",
+                f"- Ocorrências documentais identificadas: {unmatched_pdf_summary['total_occurrences_count']}",
+                f"- Valor total identificado no cabeçalho: {unmatched_pdf_summary['total_amount'] or 'não apurado'}",
+                f"- PDFs com valor identificado: {unmatched_pdf_summary['amount_identified_document_count']}",
+                f"- PDFs sem valor identificável: {unmatched_pdf_summary['amount_missing_document_count']}",
+                f"- Chaves de acesso pendentes de XML: {unmatched_pdf_summary['keys_pending_xml_count']}",
+                "- Fila de resgate: `03_SAIDAS/chaves-pendentes-xml.local.txt`",
+                "- Detalhe local: `03_SAIDAS/documentos-apenas-pdf.local.jsonl`",
+            ]
+        )
+    else:
+        lines.append(
+            "- Nenhum documento fiscal identificado exclusivamente em PDF nesta competência."
+        )
+    lines.extend(
+        [
+            "",
             "## Valores",
             "",
             f"- Valor documentado incluído: {reconciliation['documented_gross_amount']}",
@@ -2036,6 +2332,8 @@ def write_outputs(result: dict[str, Any], output_dir: Path | str) -> tuple[Path,
     target.mkdir(parents=True, exist_ok=True)
     json_path = target / "validation-result.json"
     markdown_path = target / "relatorio-prontidao-documental.md"
+    pending_keys_path = target / "chaves-pendentes-xml.local.txt"
+    pdf_details_path = target / "documentos-apenas-pdf.local.jsonl"
     json_result = {
         key: value for key, value in result.items() if not key.startswith("_private_")
     }
@@ -2044,4 +2342,23 @@ def write_outputs(result: dict[str, Any], output_dir: Path | str) -> tuple[Path,
         encoding="utf-8",
     )
     markdown_path.write_text(_markdown_report(result), encoding="utf-8")
+    private_orphans = result.get("_private_pdf_orphans", [])
+    pending_keys = sorted(
+        {
+            item["access_key"]
+            for item in private_orphans
+            if validate_access_key(item.get("access_key") or "")
+        }
+    )
+    pending_keys_path.write_text(
+        ("\n".join(pending_keys) + "\n") if pending_keys else "",
+        encoding="utf-8",
+    )
+    pdf_details_path.write_text(
+        "".join(
+            json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n"
+            for item in private_orphans
+        ),
+        encoding="utf-8",
+    )
     return json_path, markdown_path
